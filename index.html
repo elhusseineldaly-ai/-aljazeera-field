@@ -9,11 +9,12 @@
   <meta name="apple-mobile-web-app-title" content="الجزيرة الميداني" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2300804A'/%3E%3Ctext x='50' y='70' font-size='60' fill='white' text-anchor='middle' font-family='sans-serif' font-weight='bold'%3E%D8%AC%3C/text%3E%3C/svg%3E" />
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { darkMode: 'class' };</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style> body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f3f6f4; } </style>
+  <style> body { font-family: 'Segoe UI', Tahoma, sans-serif; } </style>
 </head>
 <body>
   <div id="root"></div>
@@ -25,291 +26,197 @@
     const SUPABASE_KEY = "sb_publishable_6bwC9B-Q20VG09Bq6bUXow_6xq3qdGh";
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+    /* ===== ثوابت التصميم (تدعم الوضع الليلي تلقائياً) ===== */
+    const cCard = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 shadow-sm";
+    const cMuted = "text-gray-500 dark:text-slate-400";
+    const cBorder = "border-gray-100 dark:border-slate-800";
+    const cHover = "hover:bg-emerald-50 dark:hover:bg-slate-800/70";
+    const cInput = "bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700";
+    const cTrack = "bg-gray-100 dark:bg-slate-800";
+
     const STATUS_COLORS = {
       "نشط":"#00804A","جديد":"#1E6FD9","متوقف":"#9A9A9A","منافس":"#E2574C",
       "فرصة":"#1E6FD9","قيد المتابعة":"#D4A017","تم الفوز":"#00804A","تمت الخسارة":"#E2574C","مؤجل":"#9A9A9A",
       "دهان":"#00804A","مشروع":"#D4A017","معرض":"#7C5CBF","مقاول":"#5B8C5A","استشاري":"#1E6FD9",
+      "قيد التفاوض":"#D4A017","متابعة نشطة":"#1E6FD9","تم تقديم العرض":"#7C5CBF","قارب الإغلاق":"#00804A",
     };
+    const COLORS = ["#00804A","#D4A017","#1E6FD9","#E2574C","#7C5CBF","#16B3AC","#E58E26","#5B8C5A"];
     const CITIES = ["الرياض","جدة","مكة","المدينة","الدمام","الخبر","أبها"];
     const WORK_TYPES = ["فردي","مؤسسة"];
     const PAINTER_STATUSES = ["نشط","جديد","متوقف","منافس"];
     const PROJECT_TYPES = ["فيلا","عمارة","مدرسة","مستشفى","مجمع تجاري","فندق","مبنى حكومي","استراحة"];
     const PROJECT_STATUSES = ["فرصة","قيد المتابعة","تم الفوز","تمت الخسارة","مؤجل"];
     const VISIT_TYPES = ["دهان","مشروع","معرض","مقاول","استشاري","منافس"];
+    const OPP_STATUSES = ["قيد التفاوض","متابعة نشطة","تم تقديم العرض","قارب الإغلاق"];
 
-    const CONFIG = {
-      painters: {
-        table:"painters", title:"الدهانون", statusField:"status",
-        fields:[
-          { key:"name", label:"الاسم", type:"text" },
-          { key:"phone", label:"رقم الجوال", type:"text" },
-          { key:"nationality", label:"الجنسية", type:"text" },
-          { key:"city", label:"المدينة", type:"select", opts:CITIES },
-          { key:"work_type", label:"نوع العمل", type:"select", opts:WORK_TYPES },
-          { key:"status", label:"الحالة", type:"select", opts:PAINTER_STATUSES },
-          { key:"rating", label:"التقييم", type:"number" },
-          { key:"monthly_consumption", label:"السحب الشهري", type:"number", suffix:" ر.س" },
-        ],
-        subtitle: r => `📞 ${r.phone||"—"} • 📍 ${r.city||"—"} • 💰 ${Number(r.monthly_consumption||0).toLocaleString()} ر.س`,
-        kpis: rows => [["إجمالي الدهانين",rows.length,"#00804A"],["النشطين",rows.filter(r=>r.status==="نشط").length,"#1E6FD9"],["السحب الشهري",rows.reduce((a,r)=>a+(Number(r.monthly_consumption)||0),0).toLocaleString(),"#D4A017"]],
-        addLabel:"+ دهان جديد",
-      },
-      projects: {
-        table:"projects", title:"المشاريع", statusField:"status",
-        fields:[
-          { key:"name", label:"اسم المشروع", type:"text" },
-          { key:"type", label:"النوع", type:"select", opts:PROJECT_TYPES },
-          { key:"city", label:"المدينة", type:"select", opts:CITIES },
-          { key:"owner", label:"المالك", type:"text" },
-          { key:"contractor", label:"المقاول", type:"text" },
-          { key:"painter", label:"الدهان المسؤول", type:"text" },
-          { key:"stage", label:"المرحلة", type:"text" },
-          { key:"status", label:"الحالة", type:"select", opts:PROJECT_STATUSES },
-          { key:"value", label:"القيمة المتوقعة", type:"number", suffix:" ر.س" },
-          { key:"win_prob", label:"نسبة الفوز %", type:"number", suffix:" %" },
-          { key:"notes", label:"ملاحظات", type:"text" },
-        ],
-        subtitle: r => `${r.type||"—"} • 📍 ${r.city||"—"} • 👷 ${r.painter||"—"}`,
-        kpis: rows => [["إجمالي المشاريع",rows.length,"#00804A"],["تم الفوز",rows.filter(r=>r.status==="تم الفوز").length,"#00804A"],["قيمة المشاريع",rows.reduce((a,r)=>a+(Number(r.value)||0),0).toLocaleString(),"#D4A017"]],
-        addLabel:"+ مشروع جديد",
-      },
-      contractors: {
-        table:"contractors", title:"المقاولون", statusField:null,
-        fields:[
-          { key:"name", label:"اسم المقاول", type:"text" },
-          { key:"contact", label:"الشخص المسؤول", type:"text" },
-          { key:"phone", label:"رقم الجوال", type:"text" },
-          { key:"city", label:"المدينة", type:"select", opts:CITIES },
-          { key:"projects_count", label:"عدد المشاريع", type:"number" },
-          { key:"fav_competitor", label:"المنافس المفضّل", type:"text" },
-          { key:"rating", label:"التقييم", type:"number" },
-          { key:"notes", label:"ملاحظات", type:"text" },
-        ],
-        subtitle: r => `👤 ${r.contact||"—"} • 📞 ${r.phone||"—"} • 📍 ${r.city||"—"}`,
-        kpis: rows => [["إجمالي المقاولين",rows.length,"#5B8C5A"],["إجمالي المشاريع",rows.reduce((a,r)=>a+(Number(r.projects_count)||0),0),"#D4A017"],["يفضّل منافساً",rows.filter(r=>r.fav_competitor&&r.fav_competitor!=="-").length,"#E2574C"]],
-        addLabel:"+ مقاول جديد",
-      },
-      visits: {
-        table:"visits", title:"الزيارات", statusField:"type",
-        fields:[
-          { key:"target", label:"الجهة / الاسم", type:"text" },
-          { key:"type", label:"نوع الزيارة", type:"select", opts:VISIT_TYPES },
-          { key:"date", label:"التاريخ", type:"date" },
-          { key:"location", label:"الموقع", type:"text" },
-          { key:"goals", label:"الهدف", type:"text" },
-          { key:"results", label:"النتيجة", type:"text" },
-        ],
-        subtitle: r => `${r.type||"—"} • 📅 ${r.date||"—"} • 📍 ${r.location||"—"}`,
-        kpis: rows => [["إجمالي الزيارات",rows.length,"#7C5CBF"],["زيارات دهانين",rows.filter(r=>r.type==="دهان").length,"#00804A"],["زيارات مشاريع",rows.filter(r=>r.type==="مشروع").length,"#D4A017"]],
-        addLabel:"+ زيارة جديدة",
-      },
+    /* ===== كتالوج المنتجات (ثابت) ===== */
+    const CAT_COLORS = { "داخلي":"#00804A","خارجي":"#D4A017","معاجين":"#7C5CBF","أسقف":"#1E6FD9","عوازل":"#16B3AC","خزانات":"#E58E26" };
+    const PRODUCTS = [
+      { cat:"داخلي", name:"نوفال", desc:"دهان داخلي فاخر بملمس مخملي وقابلية فائقة للغسيل", benefits:["قابل للغسيل","تغطية عالية","مقاوم للبقع"], uses:["غرف النوم","المجالس"], comp:["Jotun Fenomastic"] },
+      { cat:"داخلي", name:"جرين", desc:"دهان داخلي صحي خالٍ من المركبات المتطايرة", benefits:["صحي وآمن","بدون رائحة"], uses:["غرف الأطفال","المستشفيات"], comp:["Jotun EcoHealth"] },
+      { cat:"داخلي", name:"غلوري", desc:"دهان داخلي اقتصادي بجودة موثوقة للمشاريع", benefits:["سعر تنافسي","سهل التطبيق"], uses:["العمائر","المشاريع الحكومية"], comp:["National Standard"] },
+      { cat:"خارجي", name:"رويال", desc:"دهان خارجي فاخر مقاوم للعوامل الجوية بضمان 10 سنوات", benefits:["مقاوم UV","ضمان طويل"], uses:["الفلل الفاخرة","الواجهات"], comp:["Jotun Jotashield"] },
+      { cat:"خارجي", name:"ماكسم", desc:"دهان خارجي أكريليكي عالي المتانة", benefits:["مقاوم للقلويات","تغطية ممتازة"], uses:["العمائر","المجمعات"], comp:["National Exterior"] },
+      { cat:"خارجي", name:"نيوتيكس", desc:"دهان خارجي محبب يخفي عيوب الأسطح", benefits:["يخفي الشقوق","مظهر مميز"], uses:["الواجهات","الأسوار"], comp:["Jotun Jotatex"] },
+      { cat:"خارجي", name:"سالت", desc:"دهان خارجي بملمس رملي أنيق", benefits:["مقاوم للغبار","مظهر فاخر"], uses:["الواجهات الفاخرة"], comp:["Jotun Sandtex"] },
+      { cat:"معاجين", name:"جيبسنات", desc:"معجون مخصص لألواح الجبس بورد", benefits:["التصاق مثالي","بدون تشقق"], uses:["أسقف وجدران الجبس"], comp:["Sigma Gypsum"] },
+      { cat:"معاجين", name:"غرين بوتي", desc:"معجون داخلي صحي بسطح أملس", benefits:["صنفرة سهلة","سطح أملس"], uses:["تجهيز الجدران"], comp:["National Putty"] },
+      { cat:"أسقف", name:"إمبرور", desc:"دهان أسقف فائق البياض", benefits:["بياض ناصع","بدون تناثر"], uses:["الأسقف الداخلية"], comp:["Jotun Ceiling"] },
+      { cat:"عوازل", name:"كول روف", desc:"عازل حراري عاكس يخفض الحرارة حتى 15 درجة", benefits:["توفير كهرباء","عاكس للحرارة"], uses:["أسطح الفلل والمصانع"], comp:["Jotun Cool Shield"] },
+      { cat:"عوازل", name:"فليكس جارد", desc:"عازل مرن متعدد الاستخدامات", benefits:["مرونة 300%","يتحمل الحركة"], uses:["الأسطح","الخزانات"], comp:["Sigma Flex"] },
+      { cat:"خزانات", name:"جاز تانك", desc:"دهان إيبوكسي آمن لخزانات مياه الشرب", benefits:["معتمد صحياً","مقاوم للطحالب"], uses:["خزانات مياه الشرب"], comp:["Hempel Tank"] },
+    ];
+    const RECO_MAP = {
+      "فيلا - واجهات خارجية":["رويال","ماكسم","نيوتيكس","سالت"],
+      "فيلا - تشطيب داخلي فاخر":["نوفال","جرين","إمبرور"],
+      "عمارة - مشروع اقتصادي":["غلوري","ماكسم","غرين بوتي"],
+      "جبس بورد":["جيبسنات","إمبرور"],
+      "أسطح وعوازل":["كول روف","فليكس جارد"],
+      "مدارس ومستشفيات":["جرين","غرين بوتي","إمبرور"],
+      "خزانات مياه":["جاز تانك","فليكس جارد"],
     };
 
-    function Stars({ n }) { return <span>{[1,2,3,4,5].map(i => <span key={i} style={{ color: i <= n ? "#D4A017" : "#d1d5db" }}>★</span>)}</span>; }
-    function Badge({ status }) {
-      if (!status) return null;
-      const c = STATUS_COLORS[status] || "#666";
-      return <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: c, background: c + "18" }}>{status}</span>;
-    }
-    function Bars({ data }) {
-      const max = Math.max(1, ...data.map(d => d.value));
-      return (<div className="space-y-2">{data.map(d => (
-        <div key={d.label} className="text-xs">
-          <div className="flex justify-between mb-0.5"><span>{d.label}</span><span className="font-bold">{Number(d.value).toLocaleString()}</span></div>
-          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-2.5 rounded-full" style={{ width: (d.value/max*100)+"%", background: d.color||"#00804A" }} /></div>
-        </div>))}</div>);
-    }
-    function KpiCard({ label, value, color }) {
-      return (<div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100"><div className="text-xs text-gray-500">{label}</div><div className="text-lg font-extrabold" style={{ color }}>{value}</div></div>);
-    }
+    /* ===== إعدادات الأقسام (CRUD) ===== */
+    const CONFIG = {
+      painters: { table:"painters", title:"الدهانون", statusField:"status",
+        fields:[ {key:"name",label:"الاسم",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"nationality",label:"الجنسية",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"work_type",label:"نوع العمل",type:"select",opts:WORK_TYPES},{key:"status",label:"الحالة",type:"select",opts:PAINTER_STATUSES},{key:"rating",label:"التقييم",type:"number"},{key:"monthly_consumption",label:"السحب الشهري",type:"number",suffix:" ر.س"} ],
+        subtitle:r=>`📞 ${r.phone||"—"} • 📍 ${r.city||"—"} • 💰 ${Number(r.monthly_consumption||0).toLocaleString()} ر.س`,
+        kpis:rows=>[["إجمالي الدهانين",rows.length,"#00804A"],["النشطين",rows.filter(r=>r.status==="نشط").length,"#1E6FD9"],["السحب الشهري",rows.reduce((a,r)=>a+(Number(r.monthly_consumption)||0),0).toLocaleString(),"#D4A017"]], addLabel:"+ دهان جديد" },
+      projects: { table:"projects", title:"المشاريع", statusField:"status",
+        fields:[ {key:"name",label:"اسم المشروع",type:"text"},{key:"type",label:"النوع",type:"select",opts:PROJECT_TYPES},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"owner",label:"المالك",type:"text"},{key:"contractor",label:"المقاول",type:"text"},{key:"painter",label:"الدهان المسؤول",type:"text"},{key:"stage",label:"المرحلة",type:"text"},{key:"status",label:"الحالة",type:"select",opts:PROJECT_STATUSES},{key:"value",label:"القيمة المتوقعة",type:"number",suffix:" ر.س"},{key:"win_prob",label:"نسبة الفوز %",type:"number",suffix:" %"},{key:"notes",label:"ملاحظات",type:"text"} ],
+        subtitle:r=>`${r.type||"—"} • 📍 ${r.city||"—"} • 👷 ${r.painter||"—"}`,
+        kpis:rows=>[["إجمالي المشاريع",rows.length,"#00804A"],["تم الفوز",rows.filter(r=>r.status==="تم الفوز").length,"#00804A"],["قيمة المشاريع",rows.reduce((a,r)=>a+(Number(r.value)||0),0).toLocaleString(),"#D4A017"]], addLabel:"+ مشروع جديد" },
+      contractors: { table:"contractors", title:"المقاولون", statusField:null,
+        fields:[ {key:"name",label:"اسم المقاول",type:"text"},{key:"contact",label:"الشخص المسؤول",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"projects_count",label:"عدد المشاريع",type:"number"},{key:"fav_competitor",label:"المنافس المفضّل",type:"text"},{key:"rating",label:"التقييم",type:"number"},{key:"notes",label:"ملاحظات",type:"text"} ],
+        subtitle:r=>`👤 ${r.contact||"—"} • 📞 ${r.phone||"—"} • 📍 ${r.city||"—"}`,
+        kpis:rows=>[["إجمالي المقاولين",rows.length,"#5B8C5A"],["إجمالي المشاريع",rows.reduce((a,r)=>a+(Number(r.projects_count)||0),0),"#D4A017"],["يفضّل منافساً",rows.filter(r=>r.fav_competitor&&r.fav_competitor!=="-").length,"#E2574C"]], addLabel:"+ مقاول جديد" },
+      consultants: { table:"consultants", title:"الاستشاريون", statusField:null,
+        fields:[ {key:"name",label:"الاسم",type:"text"},{key:"company",label:"المكتب",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"specialty",label:"التخصص",type:"text"},{key:"projects_count",label:"عدد المشاريع",type:"number"},{key:"recommendations",label:"التوصيات",type:"number"},{key:"notes",label:"ملاحظات",type:"text"} ],
+        subtitle:r=>`🏢 ${r.company||"—"} • ${r.specialty||"—"}`,
+        kpis:rows=>[["الاستشاريون",rows.length,"#7C5CBF"],["التوصيات",rows.reduce((a,r)=>a+(Number(r.recommendations)||0),0),"#D4A017"],["المشاريع",rows.reduce((a,r)=>a+(Number(r.projects_count)||0),0),"#00804A"]], addLabel:"+ استشاري جديد" },
+      showrooms: { table:"showrooms", title:"المعارض", statusField:null,
+        fields:[ {key:"name",label:"اسم المعرض",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"manager",label:"المدير",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"painters_count",label:"عدد الدهانين",type:"number"},{key:"projects_count",label:"عدد المشاريع",type:"number"},{key:"visits_count",label:"عدد الزيارات",type:"number"},{key:"sales",label:"المبيعات السنوية",type:"number",suffix:" ر.س"} ],
+        subtitle:r=>`📍 ${r.city||"—"} • 👤 ${r.manager||"—"}`,
+        kpis:rows=>[["المعارض",rows.length,"#7C5CBF"],["إجمالي الدهانين",rows.reduce((a,r)=>a+(Number(r.painters_count)||0),0),"#00804A"],["المبيعات",rows.reduce((a,r)=>a+(Number(r.sales)||0),0).toLocaleString(),"#D4A017"]], addLabel:"+ معرض جديد" },
+      visits: { table:"visits", title:"الزيارات", statusField:"type",
+        fields:[ {key:"target",label:"الجهة / الاسم",type:"text"},{key:"type",label:"نوع الزيارة",type:"select",opts:VISIT_TYPES},{key:"date",label:"التاريخ",type:"date"},{key:"location",label:"الموقع",type:"text"},{key:"goals",label:"الهدف",type:"text"},{key:"results",label:"النتيجة",type:"text"} ],
+        subtitle:r=>`${r.type||"—"} • 📅 ${r.date||"—"} • 📍 ${r.location||"—"}`,
+        kpis:rows=>[["إجمالي الزيارات",rows.length,"#7C5CBF"],["زيارات دهانين",rows.filter(r=>r.type==="دهان").length,"#00804A"],["زيارات مشاريع",rows.filter(r=>r.type==="مشروع").length,"#D4A017"]], addLabel:"+ زيارة جديدة" },
+      trainings: { table:"trainings", title:"التدريبات", statusField:"topic",
+        fields:[ {key:"name",label:"اسم التدريب",type:"text"},{key:"topic",label:"الموضوع",type:"text"},{key:"date",label:"التاريخ",type:"date"},{key:"location",label:"الموقع",type:"text"},{key:"trainer",label:"المدرب",type:"text"},{key:"attendees",label:"عدد الحضور",type:"number"} ],
+        subtitle:r=>`📅 ${r.date||"—"} • 📍 ${r.location||"—"} • 👨‍🏫 ${r.trainer||"—"}`,
+        kpis:rows=>[["التدريبات",rows.length,"#16B3AC"],["إجمالي الحضور",rows.reduce((a,r)=>a+(Number(r.attendees)||0),0),"#00804A"],["المواضيع",new Set(rows.map(r=>r.topic)).size,"#D4A017"]], addLabel:"+ تدريب جديد" },
+      competitors: { table:"competitors", title:"المنافسون", statusField:null,
+        fields:[ {key:"competitor",label:"المنافس",type:"text"},{key:"product",label:"المنتج",type:"text"},{key:"price",label:"السعر",type:"text"},{key:"strengths",label:"نقاط القوة",type:"text"},{key:"weaknesses",label:"نقاط الضعف",type:"text"},{key:"project",label:"المشروع المرتبط",type:"text"},{key:"notes",label:"ملاحظات",type:"text"} ],
+        subtitle:r=>`${r.product||"—"} • ${r.price||"—"}`,
+        kpis:rows=>[["سجلات الرصد",rows.length,"#E2574C"],["المنافسون",new Set(rows.map(r=>r.competitor)).size,"#E58E26"],["مرتبط بمشاريع",rows.filter(r=>r.project&&r.project!=="-").length,"#D4A017"]], addLabel:"+ رصد منافس" },
+      conversions: { table:"conversions", title:"التحويلات", statusField:null,
+        fields:[ {key:"painter",label:"الدهان",type:"text"},{key:"from_brand",label:"من منافس",type:"text"},{key:"to_product",label:"إلى منتجنا",type:"text"},{key:"reason",label:"السبب",type:"text"},{key:"value",label:"القيمة",type:"number",suffix:" ر.س"},{key:"date",label:"التاريخ",type:"date"} ],
+        subtitle:r=>`${r.from_brand||"—"} ← ${r.to_product||"—"} • 💰 ${Number(r.value||0).toLocaleString()} ر.س`,
+        kpis:rows=>[["التحويلات",rows.length,"#E58E26"],["القيمة المحوّلة",rows.reduce((a,r)=>a+(Number(r.value)||0),0).toLocaleString(),"#00804A"],["هذا العام",rows.length,"#1E6FD9"]], addLabel:"+ تحويل جديد" },
+      opportunities: { table:"opportunities", title:"الفرص البيعية", statusField:"status",
+        fields:[ {key:"name",label:"اسم الفرصة",type:"text"},{key:"client",label:"العميل",type:"text"},{key:"painter",label:"الدهان",type:"text"},{key:"value",label:"القيمة",type:"number",suffix:" ر.س"},{key:"prob",label:"الاحتمالية %",type:"number",suffix:" %"},{key:"status",label:"الحالة",type:"select",opts:OPP_STATUSES},{key:"close_date",label:"تاريخ الإغلاق",type:"date"} ],
+        subtitle:r=>`${r.client||"—"} • 💰 ${Number(r.value||0).toLocaleString()} • ${r.prob||0}%`,
+        kpis:rows=>[["الفرص",rows.length,"#1E6FD9"],["إجمالي القيمة",rows.reduce((a,r)=>a+(Number(r.value)||0),0).toLocaleString(),"#D4A017"],["القيمة المرجّحة",Math.round(rows.reduce((a,r)=>a+(Number(r.value)||0)*(Number(r.prob)||0)/100,0)).toLocaleString(),"#00804A"]], addLabel:"+ فرصة جديدة" },
+    };
+
+    /* ===== مكونات مشتركة ===== */
+    function Stars({ n }) { return <span>{[1,2,3,4,5].map(i=><span key={i} style={{color:i<=n?"#D4A017":"#d1d5db"}}>★</span>)}</span>; }
+    function Badge({ status }) { if(!status) return null; const c=STATUS_COLORS[status]||"#888"; return <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{color:c,background:c+"22"}}>{status}</span>; }
+    function Bars({ data }) { const max=Math.max(1,...data.map(d=>d.value)); return (<div className="space-y-2">{data.map((d,i)=>(<div key={i} className="text-xs"><div className="flex justify-between mb-0.5"><span>{d.label}</span><span className="font-bold">{Number(d.value).toLocaleString()}</span></div><div className={"h-2.5 rounded-full overflow-hidden "+cTrack}><div className="h-2.5 rounded-full" style={{width:(d.value/max*100)+"%",background:d.color||COLORS[i%COLORS.length]}}/></div></div>))}</div>); }
+    function Kpi({ label, value, color }) { return (<div className={"rounded-2xl p-3 "+cCard}><div className={"text-xs "+cMuted}>{label}</div><div className="text-lg font-extrabold" style={{color}}>{value}</div></div>); }
+    function Inp({ label, v, on, type="text" }) { return (<label className="block"><span className={"text-xs "+cMuted}>{label}</span><input type={type} value={v} onChange={e=>on(e.target.value)} className={"w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500 "+cInput}/></label>); }
+    function Sel({ label, v, on, opts }) { return (<label className="block"><span className={"text-xs "+cMuted}>{label}</span><select value={v} onChange={e=>on(e.target.value)} className={"w-full rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500 "+cInput}>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select></label>); }
 
     function exportCSV(cfg, rows) {
-      const headers = cfg.fields.map(f => f.label);
-      const lines = rows.map(r => cfg.fields.map(f => '"' + String(r[f.key] ?? "").replace(/"/g, '""') + '"').join(","));
-      const csv = "\uFEFF" + [headers.join(","), ...lines].join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = cfg.title + ".csv";
-      a.click();
-      URL.revokeObjectURL(a.href);
+      const headers=cfg.fields.map(f=>f.label);
+      const lines=rows.map(r=>cfg.fields.map(f=>'"'+String(r[f.key]??"").replace(/"/g,'""')+'"').join(","));
+      const csv="\uFEFF"+[headers.join(","),...lines].join("\n");
+      const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
+      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=cfg.title+".csv"; a.click(); URL.revokeObjectURL(a.href);
     }
 
-    function Dashboard() {
-      const [d, setD] = useState({ painters: [], projects: [], contractors: [], visits: [] });
-      const [loading, setLoading] = useState(true);
-      useEffect(() => { (async () => {
-        setLoading(true);
-        const [p, pr, c, v] = await Promise.all([
-          db.from("painters").select("*"), db.from("projects").select("*"),
-          db.from("contractors").select("*"), db.from("visits").select("*"),
-        ]);
-        setD({ painters: p.data || [], projects: pr.data || [], contractors: c.data || [], visits: v.data || [] });
-        setLoading(false);
-      })(); }, []);
-      if (loading) return <div className="text-center text-gray-500 py-10 text-sm">جاري تحميل اللوحة...</div>;
-
-      const { painters, projects, contractors, visits } = d;
-      const totalConsumption = painters.reduce((a, p) => a + (Number(p.monthly_consumption) || 0), 0);
-      const totalValue = projects.reduce((a, p) => a + (Number(p.value) || 0), 0);
-      const weighted = projects.reduce((a, p) => a + (Number(p.value) || 0) * (Number(p.win_prob) || 0) / 100, 0);
-      const group = (arr, key) => { const m = {}; arr.forEach(x => { const k = x[key] || "غير محدد"; m[k] = (m[k] || 0) + 1; }); return Object.entries(m).map(([label, value]) => ({ label, value })); };
-      const byCity = group(painters, "city").sort((a, b) => b.value - a.value);
-      const byProjStatus = group(projects, "status").map(x => ({ ...x, color: STATUS_COLORS[x.label] || "#00804A" }));
-      const topPainters = [...painters].sort((a, b) => (b.monthly_consumption || 0) - (a.monthly_consumption || 0)).slice(0, 5);
-
-      return (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <KpiCard label="الدهانون" value={painters.length} color="#00804A" />
-            <KpiCard label="النشطين" value={painters.filter(p => p.status === "نشط").length} color="#1E6FD9" />
-            <KpiCard label="المشاريع" value={projects.length} color="#D4A017" />
-            <KpiCard label="مكتسبة" value={projects.filter(p => p.status === "تم الفوز").length} color="#16B3AC" />
-            <KpiCard label="المقاولون" value={contractors.length} color="#5B8C5A" />
-            <KpiCard label="الزيارات" value={visits.length} color="#7C5CBF" />
-            <KpiCard label="السحب الشهري" value={totalConsumption.toLocaleString()} color="#D4A017" />
-            <KpiCard label="قيمة المشاريع" value={totalValue.toLocaleString()} color="#7C5CBF" />
-          </div>
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <div className="text-sm font-bold mb-1">💰 القيمة المرجّحة للفرص</div>
-            <div className="text-2xl font-extrabold text-emerald-700">{Math.round(weighted).toLocaleString()} ر.س</div>
-            <div className="text-xs text-gray-500">قيمة المشاريع × نسبة الفوز المتوقعة</div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"><div className="text-sm font-bold mb-3">الدهانون حسب المدينة</div>{byCity.length ? <Bars data={byCity} /> : <div className="text-xs text-gray-400">لا توجد بيانات</div>}</div>
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"><div className="text-sm font-bold mb-3">المشاريع حسب الحالة</div>{byProjStatus.length ? <Bars data={byProjStatus} /> : <div className="text-xs text-gray-400">لا توجد بيانات</div>}</div>
-          </div>
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <div className="text-sm font-bold mb-3">🏆 أعلى 5 دهانين في السحب الشهري</div>
-            <div className="space-y-2">
-              {topPainters.map((p, i) => (
-                <div key={p.id} className="flex items-center justify-between text-sm border-b border-gray-50 pb-1.5">
-                  <span className="flex items-center gap-2"><span className="w-6 h-6 rounded-full bg-emerald-700 text-white text-xs font-bold flex items-center justify-center">{i + 1}</span>{p.name}</span>
-                  <span className="font-bold text-emerald-700">{Number(p.monthly_consumption || 0).toLocaleString()} ر.س</span>
-                </div>
-              ))}
-              {topPainters.length === 0 && <div className="text-xs text-gray-400">لا توجد بيانات</div>}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
+    /* ===== قسم عام ===== */
     function Section({ cfg }) {
-      const [rows, setRows] = useState([]);
-      const [loading, setLoading] = useState(true);
-      const [error, setError] = useState("");
-      const [q, setQ] = useState("");
-      const [view, setView] = useState("list");
-      const [selId, setSelId] = useState(null);
-      const [editor, setEditor] = useState(null);
-      const [saving, setSaving] = useState(false);
-
-      async function load() {
-        setLoading(true); setError("");
-        const { data, error } = await db.from(cfg.table).select("*").order("created_at", { ascending: false });
-        if (error) setError("تعذّر تحميل البيانات: " + error.message);
-        else setRows(data || []);
-        setLoading(false);
+      const [rows,setRows]=useState([]); const [loading,setLoading]=useState(true); const [error,setError]=useState("");
+      const [q,setQ]=useState(""); const [view,setView]=useState("list"); const [selId,setSelId]=useState(null);
+      const [editor,setEditor]=useState(null); const [saving,setSaving]=useState(false);
+      async function load(){ setLoading(true);setError("");
+        const {data,error}=await db.from(cfg.table).select("*").order("created_at",{ascending:false});
+        if(error)setError("تعذّر تحميل البيانات: "+error.message); else setRows(data||[]); setLoading(false);
       }
-      useEffect(() => { load(); }, []);
-
-      const selected = rows.find(r => r.id === selId) || null;
-      function emptyData() { const o = {}; cfg.fields.forEach(f => o[f.key] = f.type === "number" ? 0 : (f.type === "select" ? (f.opts[0] || "") : "")); return o; }
-      function openAdd() { setEditor({ mode: "add", id: null, data: emptyData() }); }
-      function openEdit(r) { const o = {}; cfg.fields.forEach(f => o[f.key] = r[f.key] ?? (f.type === "number" ? 0 : "")); setEditor({ mode: "edit", id: r.id, data: o }); }
-      function setField(k, v) { setEditor(e => ({ ...e, data: { ...e.data, [k]: v } })); }
-
-      async function save() {
-        if (!String(editor.data[cfg.fields[0].key] || "").trim()) { alert("اكتب " + cfg.fields[0].label + " أولاً"); return; }
-        setSaving(true);
-        const payload = { ...editor.data };
-        cfg.fields.forEach(f => {
-          if (f.type === "number") payload[f.key] = Number(payload[f.key] || 0);
-          if (f.type === "date" && !payload[f.key]) payload[f.key] = null;
-        });
-        let res;
-        if (editor.mode === "add") res = await db.from(cfg.table).insert([payload]);
-        else res = await db.from(cfg.table).update(payload).eq("id", editor.id);
-        setSaving(false);
-        if (res.error) { alert("خطأ في الحفظ: " + res.error.message); return; }
-        setEditor(null); await load();
+      useEffect(()=>{load()},[]);
+      const selected=rows.find(r=>r.id===selId)||null;
+      function emptyData(){ const o={}; cfg.fields.forEach(f=>o[f.key]=f.type==="number"?0:(f.type==="select"?(f.opts[0]||""):"")); return o; }
+      function openAdd(){ setEditor({mode:"add",id:null,data:emptyData()}); }
+      function openEdit(r){ const o={}; cfg.fields.forEach(f=>o[f.key]=r[f.key]??(f.type==="number"?0:"")); setEditor({mode:"edit",id:r.id,data:o}); }
+      function setField(k,v){ setEditor(e=>({...e,data:{...e.data,[k]:v}})); }
+      async function save(){ if(!String(editor.data[cfg.fields[0].key]||"").trim()){alert("اكتب "+cfg.fields[0].label+" أولاً");return;}
+        setSaving(true); const payload={...editor.data};
+        cfg.fields.forEach(f=>{ if(f.type==="number")payload[f.key]=Number(payload[f.key]||0); if(f.type==="date"&&!payload[f.key])payload[f.key]=null; });
+        let res; if(editor.mode==="add")res=await db.from(cfg.table).insert([payload]); else res=await db.from(cfg.table).update(payload).eq("id",editor.id);
+        setSaving(false); if(res.error){alert("خطأ في الحفظ: "+res.error.message);return;} setEditor(null); await load();
       }
-      async function remove(r) {
-        if (!confirm("متأكد من الحذف؟")) return;
-        const { error } = await db.from(cfg.table).delete().eq("id", r.id);
-        if (error) { alert("خطأ في الحذف: " + error.message); return; }
-        setView("list"); setSelId(null); load();
-      }
-
-      const list = rows.filter(r => q === "" || cfg.fields.some(f => String(r[f.key] || "").includes(q)));
-      const kpis = cfg.kpis ? cfg.kpis(rows) : [];
-      const inputType = f => f.type === "number" ? "number" : f.type === "date" ? "date" : "text";
-      function fmt(f, v) {
-        if (f.key === "rating") return <Stars n={Number(v) || 0} />;
-        if (f.type === "number") return (Number(v) || 0).toLocaleString() + (f.suffix || "");
-        return v || "—";
-      }
-
+      async function remove(r){ if(!confirm("متأكد من الحذف؟"))return; const {error}=await db.from(cfg.table).delete().eq("id",r.id); if(error){alert("خطأ: "+error.message);return;} setView("list");setSelId(null);load(); }
+      const list=rows.filter(r=>q===""||cfg.fields.some(f=>String(r[f.key]||"").includes(q)));
+      const kpis=cfg.kpis?cfg.kpis(rows):[];
+      const inputType=f=>f.type==="number"?"number":f.type==="date"?"date":"text";
+      function fmt(f,v){ if(f.key==="rating")return <Stars n={Number(v)||0}/>; if(f.type==="number")return (Number(v)||0).toLocaleString()+(f.suffix||""); return v||"—"; }
       return (
         <div className="space-y-4">
-          {view === "detail" && selected && (
+          {view==="detail"&&selected&&(
             <div className="space-y-4">
-              <button onClick={() => { setView("list"); setSelId(null); }} className="text-sm font-bold text-emerald-700">→ رجوع للقائمة</button>
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <button onClick={()=>{setView("list");setSelId(null);}} className="text-sm font-bold text-emerald-600">→ رجوع للقائمة</button>
+              <div className={"rounded-2xl p-5 "+cCard}>
                 <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-2xl text-white font-extrabold text-2xl flex items-center justify-center" style={{ background: STATUS_COLORS[selected[cfg.statusField]] || "#00804A" }}>{(selected[cfg.fields[0].key] || "؟").trim()[0]}</div>
-                  <div><h2 className="text-xl font-extrabold">{selected[cfg.fields[0].key]}</h2><div className="mt-1"><Badge status={cfg.statusField ? selected[cfg.statusField] : null} /></div></div>
+                  <div className="w-16 h-16 rounded-2xl text-white font-extrabold text-2xl flex items-center justify-center" style={{background:STATUS_COLORS[selected[cfg.statusField]]||"#00804A"}}>{(selected[cfg.fields[0].key]||"؟").trim()[0]}</div>
+                  <div><h2 className="text-xl font-extrabold">{selected[cfg.fields[0].key]}</h2><div className="mt-1"><Badge status={cfg.statusField?selected[cfg.statusField]:null}/></div></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-4 text-sm">
-                  {cfg.fields.slice(1).map(f => (<div key={f.key} className="bg-gray-50 rounded-xl p-2.5"><div className="text-xs text-gray-500">{f.label}</div><div className="font-bold break-words">{fmt(f, selected[f.key])}</div></div>))}
+                  {cfg.fields.slice(1).map(f=>(<div key={f.key} className={"rounded-xl p-2.5 "+cTrack}><div className={"text-xs "+cMuted}>{f.label}</div><div className="font-bold break-words">{fmt(f,selected[f.key])}</div></div>))}
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <button onClick={() => openEdit(selected)} className="flex-1 bg-emerald-700 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-emerald-800">✏️ تعديل</button>
-                  <button onClick={() => remove(selected)} className="flex-1 bg-red-50 text-red-600 rounded-xl py-2.5 text-sm font-bold hover:bg-red-100">🗑️ حذف</button>
+                  <button onClick={()=>openEdit(selected)} className="flex-1 bg-emerald-700 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-emerald-800">✏️ تعديل</button>
+                  <button onClick={()=>remove(selected)} className="flex-1 bg-red-500/10 text-red-500 rounded-xl py-2.5 text-sm font-bold hover:bg-red-500/20">🗑️ حذف</button>
                 </div>
               </div>
             </div>
           )}
-
-          {view === "list" && (
+          {view==="list"&&(
             <>
-              <div className="grid grid-cols-3 gap-3">{kpis.map(([label, val, c]) => <KpiCard key={label} label={label} value={val} color={c} />)}</div>
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="بحث..." className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
+              <div className="grid grid-cols-3 gap-3">{kpis.map(([label,val,c])=><Kpi key={label} label={label} value={val} color={c}/>)}</div>
+              <input value={q} onChange={e=>setQ(e.target.value)} placeholder="بحث..." className={"w-full rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500 "+cInput}/>
               <div className="flex gap-2">
                 <button onClick={openAdd} className="flex-1 bg-emerald-700 text-white rounded-xl px-4 py-2 text-sm font-bold hover:bg-emerald-800">{cfg.addLabel}</button>
-                <button onClick={() => exportCSV(cfg, rows)} className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-emerald-700 hover:bg-emerald-50 whitespace-nowrap">⬇️ تصدير</button>
+                <button onClick={()=>exportCSV(cfg,rows)} className={"px-3 py-2 rounded-xl text-sm font-bold text-emerald-600 whitespace-nowrap "+cCard+" "+cHover}>⬇️ تصدير</button>
               </div>
-              {loading && <div className="text-center text-gray-500 py-10 text-sm">جاري التحميل...</div>}
-              {error && <div className="bg-red-50 text-red-600 rounded-xl p-3 text-sm">{error}</div>}
-              {!loading && !error && list.length === 0 && <div className="text-center text-gray-500 py-10 text-sm">لا توجد بيانات. اضغط زر الإضافة.</div>}
+              {loading&&<div className={"text-center py-10 text-sm "+cMuted}>جاري التحميل...</div>}
+              {error&&<div className="bg-red-500/10 text-red-500 rounded-xl p-3 text-sm">{error}</div>}
+              {!loading&&!error&&list.length===0&&<div className={"text-center py-10 text-sm "+cMuted}>لا توجد بيانات. اضغط زر الإضافة.</div>}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {list.map(r => (
-                  <button key={r.id} onClick={() => { setSelId(r.id); setView("detail"); }} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-right hover:border-emerald-300 hover:shadow transition">
+                {list.map(r=>(
+                  <button key={r.id} onClick={()=>{setSelId(r.id);setView("detail");}} className={"rounded-2xl p-4 text-right transition "+cCard+" "+cHover}>
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-full text-white font-extrabold flex items-center justify-center" style={{ background: STATUS_COLORS[r[cfg.statusField]] || "#00804A" }}>{(r[cfg.fields[0].key] || "؟").trim()[0]}</div>
+                        <div className="w-11 h-11 rounded-full text-white font-extrabold flex items-center justify-center" style={{background:STATUS_COLORS[r[cfg.statusField]]||"#00804A"}}>{(r[cfg.fields[0].key]||"؟").trim()[0]}</div>
                         <div className="font-bold text-sm">{r[cfg.fields[0].key]}</div>
                       </div>
-                      <Badge status={cfg.statusField ? r[cfg.statusField] : null} />
+                      <Badge status={cfg.statusField?r[cfg.statusField]:null}/>
                     </div>
-                    <div className="text-xs text-gray-500 mt-3 border-t border-gray-100 pt-2 break-words">{cfg.subtitle(r)}</div>
+                    <div className={"text-xs mt-3 border-t pt-2 break-words "+cMuted+" "+cBorder}>{cfg.subtitle(r)}</div>
                   </button>
                 ))}
               </div>
             </>
           )}
-
-          {editor && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3" onClick={() => setEditor(null)}>
-              <div dir="rtl" onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-4 w-full max-w-md max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between mb-3"><div className="font-bold text-emerald-700">{editor.mode === "add" ? "إضافة جديد" : "تعديل"}</div><button onClick={() => setEditor(null)} className="text-gray-400 text-xl leading-none">✕</button></div>
+          {editor&&(
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3" onClick={()=>setEditor(null)}>
+              <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-4 w-full max-w-md max-h-[90vh] overflow-y-auto "+cCard}>
+                <div className="flex items-center justify-between mb-3"><div className="font-bold text-emerald-600">{editor.mode==="add"?"إضافة جديد":"تعديل"}</div><button onClick={()=>setEditor(null)} className={"text-xl leading-none "+cMuted}>✕</button></div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {cfg.fields.map(f => f.type === "select"
-                    ? <Sel key={f.key} label={f.label} v={editor.data[f.key]} on={v => setField(f.key, v)} opts={f.opts} />
-                    : <Inp key={f.key} label={f.label} type={inputType(f)} v={editor.data[f.key]} on={v => setField(f.key, v)} />)}
+                  {cfg.fields.map(f=>f.type==="select"?<Sel key={f.key} label={f.label} v={editor.data[f.key]} on={v=>setField(f.key,v)} opts={f.opts}/>:<Inp key={f.key} label={f.label} type={inputType(f)} v={editor.data[f.key]} on={v=>setField(f.key,v)}/>)}
                 </div>
-                <button onClick={save} disabled={saving} className="w-full bg-emerald-700 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-emerald-800 mt-3 disabled:opacity-50">{saving ? "جاري الحفظ..." : "حفظ"}</button>
+                <button onClick={save} disabled={saving} className="w-full bg-emerald-700 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-emerald-800 mt-3 disabled:opacity-50">{saving?"جاري الحفظ...":"حفظ"}</button>
               </div>
             </div>
           )}
@@ -317,42 +224,208 @@
       );
     }
 
-    function Inp({ label, v, on, type = "text" }) {
-      return (<label className="block"><span className="text-xs text-gray-500">{label}</span><input type={type} value={v} onChange={e => on(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500" /></label>);
-    }
-    function Sel({ label, v, on, opts }) {
-      return (<label className="block"><span className="text-xs text-gray-500">{label}</span><select value={v} onChange={e => on(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500">{opts.map(o => <option key={o} value={o}>{o}</option>)}</select></label>);
-    }
-
-    const TABS = [["dashboard","اللوحة"],["painters","الدهانون"],["projects","المشاريع"],["contractors","المقاولون"],["visits","الزيارات"]];
-    const TITLES = { dashboard:"اللوحة الرئيسية", painters:"الدهانون", projects:"المشاريع", contractors:"المقاولون", visits:"الزيارات" };
-
-    function App() {
-      const [tab, setTab] = useState("dashboard");
+    /* ===== اللوحة الرئيسية ===== */
+    function Dashboard() {
+      const [d,setD]=useState(null);
+      useEffect(()=>{(async()=>{
+        const [p,pr,op,cv,cm]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("opportunities").select("*"),db.from("conversions").select("*"),db.from("competitors").select("*")]);
+        setD({painters:p.data||[],projects:pr.data||[],opportunities:op.data||[],conversions:cv.data||[],competitors:cm.data||[]});
+      })()},[]);
+      if(!d) return <div className={"text-center py-10 text-sm "+cMuted}>جاري تحميل اللوحة...</div>;
+      const {painters,projects,opportunities,conversions,competitors}=d;
+      const group=(arr,key)=>{const m={};arr.forEach(x=>{const k=x[key]||"غير محدد";m[k]=(m[k]||0)+1;});return Object.entries(m).map(([label,value])=>({label,value}));};
+      const byCity=group(painters,"city").sort((a,b)=>b.value-a.value);
+      const byNat=group(painters,"nationality");
+      const byProj=group(projects,"status").map(x=>({...x,color:STATUS_COLORS[x.label]||"#00804A"}));
+      const compSeen=group(competitors,"competitor").map((x,i)=>({...x,color:COLORS[i%COLORS.length]}));
+      const weighted=opportunities.reduce((a,o)=>a+(Number(o.value)||0)*(Number(o.prob)||0)/100,0);
+      const convVal=conversions.reduce((a,c)=>a+(Number(c.value)||0),0);
+      const top=[...painters].sort((a,b)=>(b.monthly_consumption||0)-(a.monthly_consumption||0)).slice(0,5);
       return (
-        <div className="min-h-screen text-gray-800">
-          <header className="text-white px-4 pt-4 pb-2 shadow-md" style={{ background: "linear-gradient(135deg,#00804A,#005c35)" }}>
-            <div className="max-w-3xl mx-auto">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center font-extrabold text-lg">ج</div>
-                <div><div className="font-extrabold leading-tight">نظام الجزيرة الميداني</div><div className="text-xs text-emerald-100">{TITLES[tab]}</div></div>
-              </div>
-              <div className="flex gap-2 mt-3 overflow-x-auto">
-                {TABS.map(([k, label]) => (
-                  <button key={k} onClick={() => setTab(k)} className={"px-4 py-1.5 rounded-t-xl text-sm font-bold transition whitespace-nowrap shrink-0 " + (tab === k ? "bg-[#f3f6f4] text-emerald-800" : "bg-white/10 text-white hover:bg-white/20")}>{label}</button>
-                ))}
-              </div>
-            </div>
-          </header>
-          <main className="max-w-3xl mx-auto p-4">
-            {tab === "dashboard" ? <Dashboard key="dash" /> : <Section key={tab} cfg={CONFIG[tab]} />}
-            <div className="text-center text-xs text-gray-400 py-4">نظام الجزيرة الميداني • مربوط بقاعدة بيانات Supabase</div>
-          </main>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Kpi label="الدهانون" value={painters.length} color="#00804A"/>
+            <Kpi label="النشطين" value={painters.filter(p=>p.status==="نشط").length} color="#1E6FD9"/>
+            <Kpi label="المشاريع" value={projects.length} color="#D4A017"/>
+            <Kpi label="مكتسبة" value={projects.filter(p=>p.status==="تم الفوز").length} color="#16B3AC"/>
+            <Kpi label="الفرص" value={opportunities.length} color="#7C5CBF"/>
+            <Kpi label="القيمة المرجّحة" value={Math.round(weighted).toLocaleString()} color="#00804A"/>
+            <Kpi label="التحويلات" value={conversions.length} color="#E58E26"/>
+            <Kpi label="قيمة التحويلات" value={convVal.toLocaleString()} color="#D4A017"/>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">الدهانون حسب المدينة</div>{byCity.length?<Bars data={byCity}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">الدهانون حسب الجنسية</div>{byNat.length?<Bars data={byNat}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">المشاريع حسب الحالة</div>{byProj.length?<Bars data={byProj}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">المنافسون الأكثر ظهوراً</div>{compSeen.length?<Bars data={compSeen}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+          </div>
+          <div className={"rounded-2xl p-4 "+cCard}>
+            <div className="text-sm font-bold mb-3">🏆 أعلى 5 دهانين في السحب الشهري</div>
+            <div className="space-y-2">{top.map((p,i)=>(<div key={p.id} className={"flex items-center justify-between text-sm border-b pb-1.5 "+cBorder}><span className="flex items-center gap-2"><span className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center" style={{background:COLORS[i]}}>{i+1}</span>{p.name}</span><span className="font-bold text-emerald-600">{Number(p.monthly_consumption||0).toLocaleString()} ر.س</span></div>))}{top.length===0&&<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+          </div>
         </div>
       );
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    /* ===== كتالوج المنتجات ===== */
+    function ProductsPage() {
+      const [cat,setCat]=useState("الكل"); const [reco,setReco]=useState(Object.keys(RECO_MAP)[0]); const [sel,setSel]=useState(null);
+      const cats=["الكل",...new Set(PRODUCTS.map(p=>p.cat))];
+      const list=PRODUCTS.filter(p=>cat==="الكل"||p.cat===cat);
+      return (
+        <div className="space-y-4">
+          <div className={"rounded-2xl p-4 "+cCard}>
+            <h3 className="font-extrabold text-sm mb-2">✨ محرك التوصيات الذكي</h3>
+            <div className="flex flex-wrap gap-2 items-center">
+              <select value={reco} onChange={e=>setReco(e.target.value)} className={"rounded-xl px-3 py-2 text-xs font-bold outline-none "+cInput}>{Object.keys(RECO_MAP).map(k=><option key={k}>{k}</option>)}</select>
+              <span className={"text-xs "+cMuted}>← المقترح:</span>
+              {RECO_MAP[reco].map(n=>(<button key={n} onClick={()=>setSel(PRODUCTS.find(p=>p.name===n))} className="px-3 py-1.5 rounded-xl text-xs font-extrabold text-white bg-emerald-700 hover:bg-emerald-800">{n}</button>))}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">{cats.map(c=><button key={c} onClick={()=>setCat(c)} className={"px-3 py-1.5 rounded-xl text-xs font-bold "+(cat===c?"bg-emerald-700 text-white":cCard+" "+cMuted)}>{c}</button>)}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {list.map(p=>(
+              <button key={p.name} onClick={()=>setSel(p)} className={"rounded-2xl p-4 text-right relative overflow-hidden "+cCard+" "+cHover}>
+                <div className="absolute top-0 right-0 w-full h-1.5" style={{background:CAT_COLORS[p.cat]}}/>
+                <div className="flex justify-between items-start mt-1"><div className="font-extrabold">{p.name}</div><Badge status={p.cat}/></div>
+                <p className={"text-xs mt-1 "+cMuted}>{p.desc}</p>
+              </button>
+            ))}
+          </div>
+          {sel&&(
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setSel(null)}>
+              <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 max-w-lg w-full max-h-[90vh] overflow-y-auto "+cCard}>
+                <div className="flex justify-between items-start mb-3"><div><h3 className="text-lg font-extrabold">{sel.name}</h3><span className="text-xs font-bold" style={{color:CAT_COLORS[sel.cat]}}>{sel.cat}</span></div><button onClick={()=>setSel(null)} className={cMuted}>✕</button></div>
+                <p className="text-sm mb-3">{sel.desc}</p>
+                <div className="mb-2"><div className="text-xs font-extrabold text-emerald-600 mb-1">الفوائد:</div><div className="flex flex-wrap gap-1.5">{sel.benefits.map(x=><span key={x} className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600">{x}</span>)}</div></div>
+                <div className="mb-2"><div className="text-xs font-extrabold text-blue-500 mb-1">الاستخدامات:</div><div className="flex flex-wrap gap-1.5">{sel.uses.map(x=><span key={x} className="text-xs px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-500">{x}</span>)}</div></div>
+                <div><div className="text-xs font-extrabold text-red-500 mb-1">المنتجات المنافسة:</div><div className="flex flex-wrap gap-1.5">{sel.comp.map(x=><span key={x} className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-500">{x}</span>)}</div></div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ===== الرؤى الذكية ===== */
+    function InsightsPage() {
+      const [d,setD]=useState(null);
+      useEffect(()=>{(async()=>{
+        const [p,pr,op]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("opportunities").select("*")]);
+        setD({painters:p.data||[],projects:pr.data||[],opportunities:op.data||[]});
+      })()},[]);
+      if(!d) return <div className={"text-center py-10 text-sm "+cMuted}>جاري تحليل البيانات...</div>;
+      const atRisk=d.projects.filter(p=>p.status==="قيد المتابعة"&&(Number(p.win_prob)||0)<50);
+      const competitorP=d.painters.filter(p=>p.status==="منافس");
+      const topOpp=[...d.opportunities].sort((a,b)=>(Number(b.value)*Number(b.prob))-(Number(a.value)*Number(a.prob)))[0];
+      const insights=[
+        {c:"#E2574C",t:"مشاريع معرّضة للخسارة",x:atRisk.length?`${atRisk.length} مشاريع باحتمالية فوز أقل من 50%، أبرزها: ${atRisk.map(p=>p.name).slice(0,2).join("، ")}. التوصية: تصعيد الدعم الفني وعروض الكميات.`:"لا توجد مشاريع عالية الخطورة حالياً. وضع ممتاز 👍"},
+        {c:"#E58E26",t:"دهانون يستخدمون المنافسين",x:competitorP.length?`${competitorP.length} دهانين مصنّفين كـ "منافس": ${competitorP.map(p=>p.name).slice(0,3).join("، ")}. زيارات أسبوعية وعينات مجانية ترفع فرص تحويلهم.`:"لا يوجد دهانون مصنّفون كمنافسين."},
+        {c:"#00804A",t:"أفضل فرصة للتركيز",x:topOpp?`${topOpp.name} (${topOpp.client}) بقيمة ${Number(topOpp.value).toLocaleString()} ر.س واحتمالية ${topOpp.prob}%. ركّز جهودك على إغلاقها.`:"أضف فرصاً بيعية لتظهر التوصيات."},
+        {c:"#1E6FD9",t:"توزيع القوة",x:`لديك ${d.painters.filter(p=>p.status==="نشط").length} دهان نشط من أصل ${d.painters.length}. حافظ على الزخم بزيارات دورية للنشطين عاليي السحب.`},
+      ];
+      return (
+        <div className="space-y-4">
+          <div className={"rounded-2xl p-4 flex items-center gap-3 border-r-4 border-r-emerald-600 "+cCard}><span className="text-2xl">🧠</span><div><h2 className="font-extrabold">رؤى ذكية</h2><p className={"text-xs "+cMuted}>توصيات مولّدة آلياً من تحليل بياناتك الحيّة</p></div></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{insights.map((ins,i)=>(<div key={i} className={"rounded-2xl p-4 "+cCard}><h4 className="font-bold text-sm mb-1" style={{color:ins.c}}>{ins.t}</h4><p className="text-xs leading-relaxed">{ins.x}</p></div>))}</div>
+        </div>
+      );
+    }
+
+    /* ===== التقارير ===== */
+    function ReportsPage() {
+      const [counts,setCounts]=useState(null);
+      useEffect(()=>{(async()=>{
+        const ids=Object.keys(CONFIG); const out={};
+        await Promise.all(ids.map(async id=>{ const {data}=await db.from(CONFIG[id].table).select("id"); out[id]=(data||[]).length; }));
+        setCounts(out);
+      })()},[]);
+      async function dl(id){ const {data}=await db.from(CONFIG[id].table).select("*"); exportCSV(CONFIG[id],data||[]); }
+      return (
+        <div className="space-y-4">
+          <div className={"rounded-2xl p-5 "+cCard}>
+            <div className="flex items-center gap-3 border-b-2 border-emerald-700 pb-3 mb-4"><div className="w-12 h-12 rounded-xl bg-emerald-700 flex items-center justify-center text-white font-extrabold text-lg">ج</div><div><h2 className="font-extrabold">تقرير ملخّص النظام</h2><p className={"text-xs "+cMuted}>{new Date().toLocaleDateString("ar")}</p></div></div>
+            {!counts?<div className={"text-sm "+cMuted}>جاري التحضير...</div>:(
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{Object.keys(CONFIG).map(id=>(<div key={id} className={"rounded-xl p-3 "+cTrack}><div className={"text-xs "+cMuted}>{CONFIG[id].title}</div><div className="text-xl font-extrabold text-emerald-600">{counts[id]??"—"}</div></div>))}</div>
+            )}
+          </div>
+          <div className={"rounded-2xl p-4 "+cCard}>
+            <h3 className="font-bold text-sm mb-3">تصدير البيانات (Excel)</h3>
+            <div className="flex flex-wrap gap-2">{Object.keys(CONFIG).map(id=>(<button key={id} onClick={()=>dl(id)} className={"px-3 py-2 rounded-xl text-xs font-bold text-emerald-600 "+cTrack+" "+cHover}>⬇️ {CONFIG[id].title}</button>))}</div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ===== التطبيق ===== */
+    const NAV=[["dashboard","🏠 اللوحة"],["painters","👨‍🎨 الدهانون"],["projects","🏗️ المشاريع"],["contractors","👷 المقاولون"],["consultants","🏢 الاستشاريون"],["showrooms","🏬 المعارض"],["visits","📍 الزيارات"],["trainings","🎓 التدريبات"],["competitors","⚔️ المنافسون"],["conversions","🔁 التحويلات"],["opportunities","🎯 الفرص"],["products","📦 المنتجات"],["insights","🧠 رؤى ذكية"],["reports","📄 التقارير"]];
+    const TITLES=Object.fromEntries(NAV.map(([k,l])=>[k,l.replace(/^\S+\s/,"")]));
+
+    function App() {
+      const [tab,setTab]=useState("dashboard"); const [dark,setDark]=useState(false);
+      const [sideOpen,setSideOpen]=useState(false); const [notifOpen,setNotifOpen]=useState(false);
+      const [gq,setGq]=useState(""); const [results,setResults]=useState([]); const [notifs,setNotifs]=useState([]);
+
+      useEffect(()=>{ document.documentElement.classList.toggle("dark",dark); },[dark]);
+      useEffect(()=>{(async()=>{
+        const [pr,op]=await Promise.all([db.from("projects").select("*"),db.from("opportunities").select("*")]);
+        const list=[];
+        (pr.data||[]).filter(p=>p.status==="قيد المتابعة"&&(Number(p.win_prob)||0)<50).forEach(p=>list.push({level:"high",title:"مشروع معرّض للخسارة",text:`${p.name} — احتمالية ${p.win_prob||0}%`}));
+        (op.data||[]).filter(o=>o.close_date&&o.close_date<"2026-07-01").forEach(o=>list.push({level:"mid",title:"فرصة تقارب الإغلاق",text:`${o.name} — ${Number(o.value||0).toLocaleString()} ر.س`}));
+        setNotifs(list);
+      })()},[]);
+      useEffect(()=>{ if(gq.trim().length<2){setResults([]);return;} const t=setTimeout(async()=>{
+        const [p,pr,c]=await Promise.all([db.from("painters").select("id,name").ilike("name","%"+gq+"%").limit(5),db.from("projects").select("id,name").ilike("name","%"+gq+"%").limit(5),db.from("contractors").select("id,name").ilike("name","%"+gq+"%").limit(5)]);
+        const r=[]; (p.data||[]).forEach(x=>r.push({t:"دهان",n:x.name,go:"painters"})); (pr.data||[]).forEach(x=>r.push({t:"مشروع",n:x.name,go:"projects"})); (c.data||[]).forEach(x=>r.push({t:"مقاول",n:x.name,go:"contractors"})); setResults(r);
+      },300); return ()=>clearTimeout(t); },[gq]);
+
+      const go=id=>{ setTab(id); setSideOpen(false); setNotifOpen(false); setGq(""); setResults([]); window.scrollTo(0,0); };
+      const highCount=notifs.filter(n=>n.level==="high").length;
+
+      return (
+        <div className={"min-h-screen bg-[#f3f6f4] dark:bg-slate-950 text-gray-800 dark:text-slate-100"}>
+          <aside className={"fixed top-0 right-0 h-full w-64 z-40 flex flex-col transition-transform lg:translate-x-0 bg-white dark:bg-slate-900 border-l border-gray-200 dark:border-slate-800 "+(sideOpen?"translate-x-0":"translate-x-full")}>
+            <div className="p-4 flex items-center gap-3" style={{background:"linear-gradient(135deg,#00804A,#005c35)"}}>
+              <div className="w-11 h-11 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center text-white font-extrabold text-xl">ج</div>
+              <div><div className="text-white font-extrabold text-sm">نظام الجزيرة الميداني</div><div className="text-emerald-100 text-xs">Jazeera Field System</div></div>
+            </div>
+            <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
+              {NAV.map(([k,label])=>(<button key={k} onClick={()=>go(k)} className={"w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold transition text-right "+(tab===k?"bg-emerald-700 text-white shadow":cMuted+" "+cHover)}>{label}</button>))}
+            </nav>
+            <div className={"p-3 border-t text-xs "+cBorder+" "+cMuted}>المستخدم: أبو فيصل</div>
+          </aside>
+          {sideOpen&&<div className="fixed inset-0 bg-black/40 z-30 lg:hidden" onClick={()=>setSideOpen(false)}/>}
+
+          <div className="lg:mr-64">
+            <header className={"sticky top-0 z-20 backdrop-blur px-4 py-3 flex items-center gap-3 border-b bg-white/90 dark:bg-slate-900/90 border-gray-200 dark:border-slate-800"}>
+              <button onClick={()=>setSideOpen(true)} className={"lg:hidden p-2 rounded-xl "+cHover}>☰</button>
+              <h1 className="font-extrabold text-sm whitespace-nowrap hidden sm:block">{TITLES[tab]}</h1>
+              <div className="relative flex-1 max-w-md">
+                <div className={"flex items-center gap-2 rounded-xl px-3 py-2 "+cInput}><span className={cMuted}>🔍</span><input value={gq} onChange={e=>setGq(e.target.value)} placeholder="بحث شامل: دهان، مشروع، مقاول..." className="bg-transparent outline-none text-xs w-full"/>{gq&&<button onClick={()=>setGq("")} className={cMuted}>✕</button>}</div>
+                {results.length>0&&(<div className={"absolute top-full mt-1 w-full rounded-xl shadow-xl overflow-hidden z-30 "+cCard}>{results.map((r,i)=>(<button key={i} onClick={()=>go(r.go)} className={"w-full flex items-center justify-between px-3 py-2.5 text-xs text-right "+cHover}><span className="font-bold">{r.n}</span><Badge status={r.t}/></button>))}</div>)}
+              </div>
+              <div className="mr-auto flex items-center gap-2">
+                <div className="relative">
+                  <button onClick={()=>setNotifOpen(!notifOpen)} className={"p-2 rounded-xl relative "+cHover}>🔔{highCount>0&&<span className="absolute -top-0.5 -left-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{highCount}</span>}</button>
+                  {notifOpen&&(<div className={"absolute top-full left-0 mt-1 w-72 rounded-2xl shadow-xl overflow-hidden z-30 "+cCard}><div className={"p-3 font-extrabold text-xs border-b "+cBorder}>🔔 الإشعارات الذكية</div><div className="max-h-72 overflow-y-auto">{notifs.length===0?<div className={"p-3 text-xs "+cMuted}>لا توجد تنبيهات</div>:notifs.map((n,i)=>(<div key={i} className={"p-3 border-b flex gap-2 "+cBorder}><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{background:n.level==="high"?"#E2574C":"#D4A017"}}/><div><div className="text-xs font-bold">{n.title}</div><div className={"text-xs "+cMuted}>{n.text}</div></div></div>))}</div></div>)}
+                </div>
+                <button onClick={()=>setDark(!dark)} className={"p-2 rounded-xl "+cHover}>{dark?"☀️":"🌙"}</button>
+              </div>
+            </header>
+            <main className="p-4 max-w-5xl mx-auto">
+              {tab==="dashboard"&&<Dashboard key="dash"/>}
+              {tab==="products"&&<ProductsPage/>}
+              {tab==="insights"&&<InsightsPage key="ins"/>}
+              {tab==="reports"&&<ReportsPage key="rep"/>}
+              {CONFIG[tab]&&<Section key={tab} cfg={CONFIG[tab]}/>}
+              <div className={"text-center text-xs py-4 "+cMuted}>نظام الجزيرة الميداني • مربوط بقاعدة بيانات Supabase</div>
+            </main>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
   </script>
 </body>
 </html>
