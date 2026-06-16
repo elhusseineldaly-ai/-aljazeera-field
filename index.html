@@ -395,6 +395,64 @@
       );
     }
 
+    /* ===== إحصائية المنافسين في منطقة جازان (الربع الأول 2026) ===== */
+    const MARKET_BRANDS = [
+      {name:"دهانات الجزيرة", total:16, own:true},
+      {name:"جوتن", total:15},
+      {name:"اوسكار", total:13},
+      {name:"همبل", total:8},
+      {name:"الشبح", total:8},
+      {name:"اسكادا", total:6},
+      {name:"تكنو", total:5},
+      {name:"تايم", total:4},
+      {name:"روز", total:3},
+      {name:"العالمية", total:3},
+      {name:"دايروب", total:2},
+      {name:"المملكة", total:2},
+      {name:"اليكوم", total:2},
+      {name:"سايت", total:2},
+      {name:"سيجما", total:2},
+      {name:"سايبس", total:2},
+      {name:"ارت", total:2},
+      {name:"بينتكو", total:2},
+      {name:"مركز الجزيرة", total:2, own:true},
+      {name:"ناشونال", total:1},
+      {name:"شيروين ويليامز", total:1},
+      {name:"دهانات تجارية أخرى", total:24, other:true},
+    ];
+    const MARKET_JAZEERA_CITY = [
+      {city:"جيزان", n:4},{city:"صبيا", n:2},{city:"أبو عريش", n:2},{city:"صامطة", n:2},
+      {city:"بيش", n:1},{city:"ضمد", n:1},{city:"العارضة", n:1},{city:"العيدابي", n:1},
+      {city:"الداير", n:1},{city:"أحد المسارحة", n:1},
+    ];
+
+    function CompetitorStats() {
+      const comp = MARKET_BRANDS.filter(b=>!b.own && !b.other);
+      const compActive = comp.filter(b=>b.total>0);
+      const top = comp[0];
+      const totalComp = comp.reduce((a,b)=>a+b.total,0);
+      const chart = MARKET_BRANDS.filter(b=>b.total>0 && !b.other).map(b=>({label:b.name, value:b.total, color:b.own?"#4F46E5":"#DC2626"}));
+      return (
+        <div className="space-y-4 mb-4">
+          <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}>
+            <h2 className="font-extrabold">إحصائية المنافسين — منطقة جازان</h2>
+            <p className={"text-xs mt-0.5 "+cMuted}>توزيع فروع العلامات في مدن المنطقة · بيانات الربع الأول 2026</p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Kpi label="معارض الجزيرة" value={16} color="#4F46E5"/>
+            <Kpi label="أقوى منافس" value={top.name+" — "+top.total} color="#DC2626"/>
+            <Kpi label="العلامات المنافسة" value={compActive.length} color="#D97706"/>
+            <Kpi label="إجمالي فروع المنافسين" value={totalComp} color="#0891B2"/>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">فروع العلامات في المنطقة (الجزيرة باللون النيلي)</div><Bars data={chart}/></div>
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">معارض الجزيرة حسب المدينة</div><Bars data={MARKET_JAZEERA_CITY.map(c=>({label:c.city,value:c.n,color:"#4F46E5"}))}/></div>
+          </div>
+          <div className={"rounded-2xl p-3 text-xs "+cCard+" "+cMuted}>ملاحظة: تشمل "دهانات تجارية أخرى" 24 فرعاً لعلامات متفرقة، ولم تُدرج في الرسم لتركيزه على العلامات الرئيسية.</div>
+        </div>
+      );
+    }
+
     /* ===== التطبيق ===== */
     const NAV=[["dashboard","اللوحة الرئيسية"],["painters","الدهانون"],["projects","المشاريع"],["contractors","المقاولون"],["visits","الزيارات"],["trainings","التدريبات"],["competitors","المنافسون"],["products","المنتجات"],["insights","رؤى ذكية"],["reports","التقارير"]];
     const TITLES=Object.fromEntries(NAV);
