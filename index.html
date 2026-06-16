@@ -36,7 +36,6 @@
     const PROJECT_TYPES = ["فيلا","عمارة","مدرسة","مستشفى","مجمع تجاري","فندق","مبنى حكومي","استراحة"];
     const PROJECT_STATUSES = ["فرصة","قيد المتابعة","تم الفوز","تمت الخسارة","مؤجل"];
 
-    /* ===== إعدادات الأقسام ===== */
     const CONFIG = {
       painters: {
         table: "painters", title: "الدهانون", statusField: "status",
@@ -83,15 +82,116 @@
       },
     };
 
-    function Stars({ n }) {
-      return <span>{[1,2,3,4,5].map(i => <span key={i} style={{ color: i <= n ? "#D4A017" : "#d1d5db" }}>★</span>)}</span>;
-    }
+    function Stars({ n }) { return <span>{[1,2,3,4,5].map(i => <span key={i} style={{ color: i <= n ? "#D4A017" : "#d1d5db" }}>★</span>)}</span>; }
     function Badge({ status }) {
       if (!status) return null;
       const c = STATUS_COLORS[status] || "#666";
       return <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: c, background: c + "18" }}>{status}</span>;
     }
+    function Bars({ data }) {
+      const max = Math.max(1, ...data.map(d => d.value));
+      return (
+        <div className="space-y-2">
+          {data.map(d => (
+            <div key={d.label} className="text-xs">
+              <div className="flex justify-between mb-0.5"><span>{d.label}</span><span className="font-bold">{Number(d.value).toLocaleString()}</span></div>
+              <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden"><div className="h-2.5 rounded-full" style={{ width: (d.value / max * 100) + "%", background: d.color || "#00804A" }} /></div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    function KpiCard({ label, value, color }) {
+      return (
+        <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100">
+          <div className="text-xs text-gray-500">{label}</div>
+          <div className="text-lg font-extrabold" style={{ color }}>{value}</div>
+        </div>
+      );
+    }
 
+    /* ===== اللوحة الرئيسية ===== */
+    function Dashboard() {
+      const [painters, setPainters] = useState([]);
+      const [projects, setProjects] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState("");
+
+      useEffect(() => { (async () => {
+        setLoading(true); setError("");
+        const a = await db.from("painters").select("*");
+        const b = await db.from("projects").select("*");
+        if (a.error || b.error) setError("تعذّر تحميل البيانات");
+        else { setPainters(a.data || []); setProjects(b.data || []); }
+        setLoading(false);
+      })(); }, []);
+
+      if (loading) return <div className="text-center text-gray-500 py-10 text-sm">جاري تحميل اللوحة...</div>;
+      if (error) return <div className="bg-red-50 text-red-600 rounded-xl p-3 text-sm">{error}</div>;
+
+      const activeP = painters.filter(p => p.status === "نشط").length;
+      const totalConsumption = painters.reduce((a, p) => a + (Number(p.monthly_consumption) || 0), 0);
+      const wonProjects = projects.filter(p => p.status === "تم الفوز").length;
+      const totalValue = projects.reduce((a, p) => a + (Number(p.value) || 0), 0);
+      const weighted = projects.reduce((a, p) => a + (Number(p.value) || 0) * (Number(p.win_prob) || 0) / 100, 0);
+
+      const group = (arr, key) => {
+        const m = {};
+        arr.forEach(x => { const k = x[key] || "غير محدد"; m[k] = (m[k] || 0) + 1; });
+        return Object.entries(m).map(([label, value]) => ({ label, value }));
+      };
+      const byCity = group(painters, "city").sort((a, b) => b.value - a.value);
+      const byProjStatus = group(projects, "status").map(d => ({ ...d, color: STATUS_COLORS[d.label] || "#00804A" }));
+      const topPainters = [...painters].sort((a, b) => (b.monthly_consumption || 0) - (a.monthly_consumption || 0)).slice(0, 5);
+
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <KpiCard label="إجمالي الدهانين" value={painters.length} color="#00804A" />
+            <KpiCard label="الدهانين النشطين" value={activeP} color="#1E6FD9" />
+            <KpiCard label="السحب الشهري" value={totalConsumption.toLocaleString() + " ر.س"} color="#D4A017" />
+            <KpiCard label="إجمالي المشاريع" value={projects.length} color="#00804A" />
+            <KpiCard label="مشاريع مكتسبة" value={wonProjects} color="#16B3AC" />
+            <KpiCard label="قيمة المشاريع" value={totalValue.toLocaleString() + " ر.س"} color="#7C5CBF" />
+          </div>
+
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <div className="text-sm font-bold mb-1">💰 القيمة المرجّحة للفرص</div>
+            <div className="text-2xl font-extrabold text-emerald-700">{Math.round(weighted).toLocaleString()} ر.س</div>
+            <div className="text-xs text-gray-500">قيمة المشاريع مضروبة في نسبة الفوز المتوقعة</div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <div className="text-sm font-bold mb-3">الدهانون حسب المدينة</div>
+              {byCity.length ? <Bars data={byCity} /> : <div className="text-xs text-gray-400">لا توجد بيانات</div>}
+            </div>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <div className="text-sm font-bold mb-3">المشاريع حسب الحالة</div>
+              {byProjStatus.length ? <Bars data={byProjStatus} /> : <div className="text-xs text-gray-400">لا توجد بيانات</div>}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <div className="text-sm font-bold mb-3">🏆 أعلى 5 دهانين في السحب الشهري</div>
+            <div className="space-y-2">
+              {topPainters.map((p, i) => (
+                <div key={p.id} className="flex items-center justify-between text-sm border-b border-gray-50 pb-1.5">
+                  <span className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-emerald-700 text-white text-xs font-bold flex items-center justify-center">{i + 1}</span>
+                    {p.name}
+                  </span>
+                  <span className="font-bold text-emerald-700">{Number(p.monthly_consumption || 0).toLocaleString()} ر.س</span>
+                </div>
+              ))}
+              {topPainters.length === 0 && <div className="text-xs text-gray-400">لا توجد بيانات</div>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ===== قسم عام (دهانون / مشاريع) ===== */
     function Section({ cfg }) {
       const [rows, setRows] = useState([]);
       const [loading, setLoading] = useState(true);
@@ -112,18 +212,9 @@
       useEffect(() => { load(); }, []);
 
       const selected = rows.find(r => r.id === selId) || null;
-
-      function emptyData() {
-        const d = {};
-        cfg.fields.forEach(f => d[f.key] = f.type === "number" ? 0 : (f.type === "select" ? (f.opts[0] || "") : ""));
-        return d;
-      }
+      function emptyData() { const d = {}; cfg.fields.forEach(f => d[f.key] = f.type === "number" ? 0 : (f.type === "select" ? (f.opts[0] || "") : "")); return d; }
       function openAdd() { setEditor({ mode: "add", id: null, data: emptyData() }); }
-      function openEdit(r) {
-        const d = {};
-        cfg.fields.forEach(f => d[f.key] = r[f.key] ?? (f.type === "number" ? 0 : ""));
-        setEditor({ mode: "edit", id: r.id, data: d });
-      }
+      function openEdit(r) { const d = {}; cfg.fields.forEach(f => d[f.key] = r[f.key] ?? (f.type === "number" ? 0 : "")); setEditor({ mode: "edit", id: r.id, data: d }); }
       function setField(k, v) { setEditor(e => ({ ...e, data: { ...e.data, [k]: v } })); }
 
       async function save() {
@@ -147,7 +238,6 @@
 
       const list = rows.filter(r => q === "" || cfg.fields.some(f => String(r[f.key] || "").includes(q)));
       const kpis = cfg.kpis ? cfg.kpis(rows) : [];
-
       function fmt(f, v) {
         if (f.key === "rating") return <Stars n={Number(v) || 0} />;
         if (f.type === "number") return (Number(v) || 0).toLocaleString() + (f.suffix || "");
@@ -156,7 +246,6 @@
 
       return (
         <div className="space-y-4">
-          {/* تفاصيل */}
           {view === "detail" && selected && (
             <div className="space-y-4">
               <button onClick={() => { setView("list"); setSelId(null); }} className="text-sm font-bold text-emerald-700">→ رجوع للقائمة</button>
@@ -165,17 +254,11 @@
                   <div className="w-16 h-16 rounded-2xl text-white font-extrabold text-2xl flex items-center justify-center" style={{ background: STATUS_COLORS[selected[cfg.statusField]] || "#00804A" }}>
                     {(selected[cfg.fields[0].key] || "؟").trim()[0]}
                   </div>
-                  <div>
-                    <h2 className="text-xl font-extrabold">{selected[cfg.fields[0].key]}</h2>
-                    <div className="mt-1"><Badge status={selected[cfg.statusField]} /></div>
-                  </div>
+                  <div><h2 className="text-xl font-extrabold">{selected[cfg.fields[0].key]}</h2><div className="mt-1"><Badge status={selected[cfg.statusField]} /></div></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-4 text-sm">
                   {cfg.fields.slice(1).map(f => (
-                    <div key={f.key} className="bg-gray-50 rounded-xl p-2.5">
-                      <div className="text-xs text-gray-500">{f.label}</div>
-                      <div className="font-bold">{fmt(f, selected[f.key])}</div>
-                    </div>
+                    <div key={f.key} className="bg-gray-50 rounded-xl p-2.5"><div className="text-xs text-gray-500">{f.label}</div><div className="font-bold">{fmt(f, selected[f.key])}</div></div>
                   ))}
                 </div>
                 <div className="flex gap-2 mt-4">
@@ -186,20 +269,13 @@
             </div>
           )}
 
-          {/* قائمة */}
           {view === "list" && (
             <>
               <div className="grid grid-cols-3 gap-3">
-                {kpis.map(([label, val, c]) => (
-                  <div key={label} className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100">
-                    <div className="text-xs text-gray-500">{label}</div>
-                    <div className="text-lg font-extrabold" style={{ color: c }}>{val}</div>
-                  </div>
-                ))}
+                {kpis.map(([label, val, c]) => <KpiCard key={label} label={label} value={val} color={c} />)}
               </div>
               <div className="flex gap-2">
-                <input value={q} onChange={e => setQ(e.target.value)} placeholder="بحث..."
-                  className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
+                <input value={q} onChange={e => setQ(e.target.value)} placeholder="بحث..." className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
                 <button onClick={openAdd} className="bg-emerald-700 text-white rounded-xl px-4 py-2 text-sm font-bold hover:bg-emerald-800 whitespace-nowrap">{cfg.addLabel}</button>
               </div>
               {loading && <div className="text-center text-gray-500 py-10 text-sm">جاري التحميل...</div>}
@@ -207,13 +283,10 @@
               {!loading && !error && list.length === 0 && <div className="text-center text-gray-500 py-10 text-sm">لا توجد بيانات. اضغط زر الإضافة.</div>}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {list.map(r => (
-                  <button key={r.id} onClick={() => { setSelId(r.id); setView("detail"); }}
-                    className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-right hover:border-emerald-300 hover:shadow transition">
+                  <button key={r.id} onClick={() => { setSelId(r.id); setView("detail"); }} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-right hover:border-emerald-300 hover:shadow transition">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-11 h-11 rounded-full text-white font-extrabold flex items-center justify-center" style={{ background: STATUS_COLORS[r[cfg.statusField]] || "#00804A" }}>
-                          {(r[cfg.fields[0].key] || "؟").trim()[0]}
-                        </div>
+                        <div className="w-11 h-11 rounded-full text-white font-extrabold flex items-center justify-center" style={{ background: STATUS_COLORS[r[cfg.statusField]] || "#00804A" }}>{(r[cfg.fields[0].key] || "؟").trim()[0]}</div>
                         <div className="font-bold text-sm">{r[cfg.fields[0].key]}</div>
                       </div>
                       <Badge status={r[cfg.statusField]} />
@@ -225,7 +298,6 @@
             </>
           )}
 
-          {/* نافذة الإضافة/التعديل */}
           {editor && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3" onClick={() => setEditor(null)}>
               <div dir="rtl" onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-4 w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -234,15 +306,11 @@
                   <button onClick={() => setEditor(null)} className="text-gray-400 text-xl leading-none">✕</button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {cfg.fields.map(f => f.type === "select" ? (
-                    <Sel key={f.key} label={f.label} v={editor.data[f.key]} on={v => setField(f.key, v)} opts={f.opts} />
-                  ) : (
-                    <Inp key={f.key} label={f.label} type={f.type === "number" ? "number" : "text"} v={editor.data[f.key]} on={v => setField(f.key, v)} />
-                  ))}
+                  {cfg.fields.map(f => f.type === "select"
+                    ? <Sel key={f.key} label={f.label} v={editor.data[f.key]} on={v => setField(f.key, v)} opts={f.opts} />
+                    : <Inp key={f.key} label={f.label} type={f.type === "number" ? "number" : "text"} v={editor.data[f.key]} on={v => setField(f.key, v)} />)}
                 </div>
-                <button onClick={save} disabled={saving} className="w-full bg-emerald-700 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-emerald-800 mt-3 disabled:opacity-50">
-                  {saving ? "جاري الحفظ..." : "حفظ"}
-                </button>
+                <button onClick={save} disabled={saving} className="w-full bg-emerald-700 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-emerald-800 mt-3 disabled:opacity-50">{saving ? "جاري الحفظ..." : "حفظ"}</button>
               </div>
             </div>
           )}
@@ -251,51 +319,37 @@
     }
 
     function Inp({ label, v, on, type = "text" }) {
-      return (
-        <label className="block">
-          <span className="text-xs text-gray-500">{label}</span>
-          <input type={type} value={v} onChange={e => on(e.target.value)}
-            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500" />
-        </label>
-      );
+      return (<label className="block"><span className="text-xs text-gray-500">{label}</span>
+        <input type={type} value={v} onChange={e => on(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500" /></label>);
     }
     function Sel({ label, v, on, opts }) {
-      return (
-        <label className="block">
-          <span className="text-xs text-gray-500">{label}</span>
-          <select value={v} onChange={e => on(e.target.value)}
-            className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500">
-            {opts.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-        </label>
-      );
+      return (<label className="block"><span className="text-xs text-gray-500">{label}</span>
+        <select value={v} onChange={e => on(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-emerald-500">
+          {opts.map(o => <option key={o} value={o}>{o}</option>)}</select></label>);
     }
 
+    const TABS = [["dashboard", "اللوحة"], ["painters", "الدهانون"], ["projects", "المشاريع"]];
+    const TITLES = { dashboard: "اللوحة الرئيسية", painters: "الدهانون", projects: "المشاريع" };
+
     function App() {
-      const [tab, setTab] = useState("painters");
+      const [tab, setTab] = useState("dashboard");
       return (
         <div className="min-h-screen text-gray-800">
           <header className="text-white px-4 pt-4 pb-2 shadow-md" style={{ background: "linear-gradient(135deg,#00804A,#005c35)" }}>
             <div className="max-w-3xl mx-auto">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center font-extrabold text-lg">ج</div>
-                <div>
-                  <div className="font-extrabold leading-tight">نظام الجزيرة الميداني</div>
-                  <div className="text-xs text-emerald-100">{CONFIG[tab].title}</div>
-                </div>
+                <div><div className="font-extrabold leading-tight">نظام الجزيرة الميداني</div><div className="text-xs text-emerald-100">{TITLES[tab]}</div></div>
               </div>
               <div className="flex gap-2 mt-3">
-                {Object.keys(CONFIG).map(k => (
-                  <button key={k} onClick={() => setTab(k)}
-                    className={"px-4 py-1.5 rounded-t-xl text-sm font-bold transition " + (tab === k ? "bg-[#f3f6f4] text-emerald-800" : "bg-white/10 text-white hover:bg-white/20")}>
-                    {CONFIG[k].title}
-                  </button>
+                {TABS.map(([k, label]) => (
+                  <button key={k} onClick={() => setTab(k)} className={"px-4 py-1.5 rounded-t-xl text-sm font-bold transition " + (tab === k ? "bg-[#f3f6f4] text-emerald-800" : "bg-white/10 text-white hover:bg-white/20")}>{label}</button>
                 ))}
               </div>
             </div>
           </header>
           <main className="max-w-3xl mx-auto p-4">
-            <Section key={tab} cfg={CONFIG[tab]} />
+            {tab === "dashboard" ? <Dashboard key="dash" /> : <Section key={tab} cfg={CONFIG[tab]} />}
             <div className="text-center text-xs text-gray-400 py-4">نظام الجزيرة الميداني • مربوط بقاعدة بيانات Supabase</div>
           </main>
         </div>
