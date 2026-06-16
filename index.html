@@ -13,9 +13,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style>
-    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f3f6f4; }
-  </style>
+  <style> body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f3f6f4; } </style>
 </head>
 <body>
   <div id="root"></div>
@@ -28,17 +26,18 @@
     const SUPABASE_KEY = "sb_publishable_6bwC9B-Q20VG09Bq6bUXow_6xq3qdGh";
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const STATUS_COLORS = {
-      "نشط": "#00804A", "جديد": "#1E6FD9", "متوقف": "#9A9A9A", "منافس": "#E2574C",
-    };
+    const STATUS_COLORS = { "نشط": "#00804A", "جديد": "#1E6FD9", "متوقف": "#9A9A9A", "منافس": "#E2574C" };
     const CITIES = ["الرياض", "جدة", "مكة", "المدينة", "الدمام", "الخبر", "أبها"];
     const WORK_TYPES = ["فردي", "مؤسسة"];
     const STATUSES = ["نشط", "جديد", "متوقف", "منافس"];
-
     const EMPTY = { name: "", phone: "", nationality: "", city: "الرياض", work_type: "فردي", status: "نشط", rating: 3, monthly_consumption: 0 };
 
     function Stars({ n }) {
       return <span>{[1,2,3,4,5].map(i => <span key={i} style={{ color: i <= n ? "#D4A017" : "#d1d5db" }}>★</span>)}</span>;
+    }
+    function Badge({ status }) {
+      const c = STATUS_COLORS[status] || "#666";
+      return <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: c, background: c + "18" }}>{status}</span>;
     }
 
     function App() {
@@ -46,8 +45,9 @@
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState("");
       const [q, setQ] = useState("");
-      const [showForm, setShowForm] = useState(false);
-      const [form, setForm] = useState(EMPTY);
+      const [view, setView] = useState("list");        // list | detail
+      const [selectedId, setSelectedId] = useState(null);
+      const [editor, setEditor] = useState(null);       // null | {mode,id,data}
       const [saving, setSaving] = useState(false);
 
       async function load() {
@@ -57,20 +57,38 @@
         else setPainters(data || []);
         setLoading(false);
       }
-
       useEffect(() => { load(); }, []);
 
-      async function addPainter() {
-        if (!form.name.trim()) { alert("اكتب اسم الدهان أولاً"); return; }
+      const selected = painters.find(p => p.id === selectedId) || null;
+
+      function openAdd() { setEditor({ mode: "add", id: null, data: { ...EMPTY } }); }
+      function openEdit(p) {
+        setEditor({ mode: "edit", id: p.id, data: {
+          name: p.name || "", phone: p.phone || "", nationality: p.nationality || "",
+          city: p.city || "الرياض", work_type: p.work_type || "فردي", status: p.status || "نشط",
+          rating: p.rating ?? 3, monthly_consumption: p.monthly_consumption ?? 0,
+        }});
+      }
+      function setField(k, v) { setEditor(e => ({ ...e, data: { ...e.data, [k]: v } })); }
+
+      async function save() {
+        if (!editor.data.name.trim()) { alert("اكتب اسم الدهان أولاً"); return; }
         setSaving(true);
-        const { error } = await db.from("painters").insert([{
-          ...form,
-          rating: Number(form.rating),
-          monthly_consumption: Number(form.monthly_consumption),
-        }]);
+        const payload = { ...editor.data, rating: Number(editor.data.rating), monthly_consumption: Number(editor.data.monthly_consumption) };
+        let res;
+        if (editor.mode === "add") res = await db.from("painters").insert([payload]);
+        else res = await db.from("painters").update(payload).eq("id", editor.id);
         setSaving(false);
-        if (error) { alert("خطأ في الحفظ: " + error.message); return; }
-        setForm(EMPTY); setShowForm(false); load();
+        if (res.error) { alert("خطأ في الحفظ: " + res.error.message); return; }
+        setEditor(null);
+        await load();
+      }
+
+      async function remove(p) {
+        if (!confirm("متأكد من حذف الدهان: " + p.name + " ؟")) return;
+        const { error } = await db.from("painters").delete().eq("id", p.id);
+        if (error) { alert("خطأ في الحذف: " + error.message); return; }
+        setView("list"); setSelectedId(null); load();
       }
 
       const list = painters.filter(p =>
@@ -79,11 +97,8 @@
       const active = painters.filter(p => p.status === "نشط").length;
       const totalConsumption = painters.reduce((a, p) => a + (Number(p.monthly_consumption) || 0), 0);
 
-      const field = (key, val) => setForm({ ...form, [key]: val });
-
       return (
         <div className="min-h-screen text-gray-800">
-          {/* الهيدر */}
           <header className="text-white px-4 py-4 shadow-md" style={{ background: "linear-gradient(135deg,#00804A,#005c35)" }}>
             <div className="max-w-3xl mx-auto flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center font-extrabold text-lg">ج</div>
@@ -95,89 +110,115 @@
           </header>
 
           <main className="max-w-3xl mx-auto p-4 space-y-4">
-            {/* مؤشرات سريعة */}
-            <div className="grid grid-cols-3 gap-3">
-              {[["إجمالي الدهانين", painters.length, "#00804A"],
-                ["النشطين", active, "#1E6FD9"],
-                ["السحب الشهري", totalConsumption.toLocaleString(), "#D4A017"]].map(([label, val, c]) => (
-                <div key={label} className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100">
-                  <div className="text-xs text-gray-500">{label}</div>
-                  <div className="text-xl font-extrabold" style={{ color: c }}>{val}</div>
-                </div>
-              ))}
-            </div>
 
-            {/* بحث + إضافة */}
-            <div className="flex gap-2">
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="بحث بالاسم أو الجوال أو المدينة..."
-                className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
-              <button onClick={() => setShowForm(!showForm)}
-                className="bg-emerald-700 text-white rounded-xl px-4 py-2 text-sm font-bold hover:bg-emerald-800 transition whitespace-nowrap">
-                {showForm ? "إغلاق" : "+ دهان جديد"}
-              </button>
-            </div>
-
-            {/* نموذج الإضافة */}
-            {showForm && (
-              <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-3">
-                <div className="font-bold text-sm text-emerald-700">إضافة دهان جديد</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Inp label="الاسم" v={form.name} on={v => field("name", v)} />
-                  <Inp label="رقم الجوال" v={form.phone} on={v => field("phone", v)} />
-                  <Inp label="الجنسية" v={form.nationality} on={v => field("nationality", v)} />
-                  <Sel label="المدينة" v={form.city} on={v => field("city", v)} opts={CITIES} />
-                  <Sel label="نوع العمل" v={form.work_type} on={v => field("work_type", v)} opts={WORK_TYPES} />
-                  <Sel label="الحالة" v={form.status} on={v => field("status", v)} opts={STATUSES} />
-                  <Inp label="التقييم (1-5)" type="number" v={form.rating} on={v => field("rating", v)} />
-                  <Inp label="السحب الشهري (ريال)" type="number" v={form.monthly_consumption} on={v => field("monthly_consumption", v)} />
+            {/* ===== شاشة التفاصيل ===== */}
+            {view === "detail" && selected && (
+              <div className="space-y-4">
+                <button onClick={() => { setView("list"); setSelectedId(null); }} className="text-sm font-bold text-emerald-700">→ رجوع للقائمة</button>
+                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-2xl text-white font-extrabold text-2xl flex items-center justify-center" style={{ background: STATUS_COLORS[selected.status] || "#00804A" }}>
+                      {(selected.name || "؟").trim()[0]}
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-extrabold">{selected.name}</h2>
+                      <div className="mt-1 flex items-center gap-2"><Badge status={selected.status} /> <Stars n={selected.rating || 0} /></div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mt-4 text-sm">
+                    {[["رقم الجوال", selected.phone], ["الجنسية", selected.nationality], ["المدينة", selected.city],
+                      ["نوع العمل", selected.work_type], ["الحالة", selected.status],
+                      ["السحب الشهري", (Number(selected.monthly_consumption || 0)).toLocaleString() + " ر.س"]].map(([k, v]) => (
+                      <div key={k} className="bg-gray-50 rounded-xl p-2.5">
+                        <div className="text-xs text-gray-500">{k}</div>
+                        <div className="font-bold">{v || "—"}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <button onClick={() => openEdit(selected)} className="flex-1 bg-emerald-700 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-emerald-800">✏️ تعديل</button>
+                    <button onClick={() => remove(selected)} className="flex-1 bg-red-50 text-red-600 rounded-xl py-2.5 text-sm font-bold hover:bg-red-100">🗑️ حذف</button>
+                  </div>
                 </div>
-                <button onClick={addPainter} disabled={saving}
-                  className="w-full bg-emerald-700 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-emerald-800 transition disabled:opacity-50">
-                  {saving ? "جاري الحفظ..." : "حفظ الدهان"}
-                </button>
               </div>
             )}
 
-            {/* الحالات */}
-            {loading && <div className="text-center text-gray-500 py-10 text-sm">جاري تحميل البيانات من قاعدة البيانات...</div>}
-            {error && <div className="bg-red-50 text-red-600 rounded-xl p-3 text-sm">{error}</div>}
-            {!loading && !error && list.length === 0 && (
-              <div className="text-center text-gray-500 py-10 text-sm">لا يوجد دهانون. اضغط "دهان جديد" لإضافة أول واحد.</div>
-            )}
-
-            {/* قائمة الدهانين */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {list.map(p => (
-                <div key={p.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-full text-white font-extrabold flex items-center justify-center"
-                        style={{ background: STATUS_COLORS[p.status] || "#00804A" }}>
-                        {(p.name || "؟").trim()[0]}
-                      </div>
-                      <div>
-                        <div className="font-bold text-sm">{p.name}</div>
-                        <div className="text-xs text-gray-500">📞 {p.phone || "—"}</div>
-                      </div>
+            {/* ===== شاشة القائمة ===== */}
+            {view === "list" && (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  {[["إجمالي الدهانين", painters.length, "#00804A"], ["النشطين", active, "#1E6FD9"], ["السحب الشهري", totalConsumption.toLocaleString(), "#D4A017"]].map(([label, val, c]) => (
+                    <div key={label} className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100">
+                      <div className="text-xs text-gray-500">{label}</div>
+                      <div className="text-xl font-extrabold" style={{ color: c }}>{val}</div>
                     </div>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-                      style={{ color: STATUS_COLORS[p.status] || "#666", background: (STATUS_COLORS[p.status] || "#666") + "18" }}>
-                      {p.status}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mt-3 border-t border-gray-100 pt-2">
-                    <span>📍 {p.city}</span>
-                    <span>{p.nationality}</span>
-                    <span>{p.work_type}</span>
-                    <span>💰 {Number(p.monthly_consumption || 0).toLocaleString()} ر.س</span>
-                    <span><Stars n={p.rating || 0} /></span>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+
+                <div className="flex gap-2">
+                  <input value={q} onChange={e => setQ(e.target.value)} placeholder="بحث بالاسم أو الجوال أو المدينة..."
+                    className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500" />
+                  <button onClick={openAdd} className="bg-emerald-700 text-white rounded-xl px-4 py-2 text-sm font-bold hover:bg-emerald-800 whitespace-nowrap">+ دهان جديد</button>
+                </div>
+
+                {loading && <div className="text-center text-gray-500 py-10 text-sm">جاري تحميل البيانات...</div>}
+                {error && <div className="bg-red-50 text-red-600 rounded-xl p-3 text-sm">{error}</div>}
+                {!loading && !error && list.length === 0 && <div className="text-center text-gray-500 py-10 text-sm">لا يوجد دهانون. اضغط "دهان جديد".</div>}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {list.map(p => (
+                    <button key={p.id} onClick={() => { setSelectedId(p.id); setView("detail"); }}
+                      className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-right hover:border-emerald-300 hover:shadow transition">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-11 h-11 rounded-full text-white font-extrabold flex items-center justify-center" style={{ background: STATUS_COLORS[p.status] || "#00804A" }}>
+                            {(p.name || "؟").trim()[0]}
+                          </div>
+                          <div>
+                            <div className="font-bold text-sm">{p.name}</div>
+                            <div className="text-xs text-gray-500">📞 {p.phone || "—"}</div>
+                          </div>
+                        </div>
+                        <Badge status={p.status} />
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mt-3 border-t border-gray-100 pt-2">
+                        <span>📍 {p.city}</span><span>{p.nationality}</span><span>{p.work_type}</span>
+                        <span>💰 {Number(p.monthly_consumption || 0).toLocaleString()} ر.س</span>
+                        <span><Stars n={p.rating || 0} /></span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             <div className="text-center text-xs text-gray-400 py-4">نظام الجزيرة الميداني • مربوط بقاعدة بيانات Supabase</div>
           </main>
+
+          {/* ===== نافذة الإضافة / التعديل ===== */}
+          {editor && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3" onClick={() => setEditor(null)}>
+              <div dir="rtl" onClick={e => e.stopPropagation()} className="bg-white rounded-2xl p-4 w-full max-w-md max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="font-bold text-emerald-700">{editor.mode === "add" ? "إضافة دهان جديد" : "تعديل بيانات الدهان"}</div>
+                  <button onClick={() => setEditor(null)} className="text-gray-400 text-xl leading-none">✕</button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Inp label="الاسم" v={editor.data.name} on={v => setField("name", v)} />
+                  <Inp label="رقم الجوال" v={editor.data.phone} on={v => setField("phone", v)} />
+                  <Inp label="الجنسية" v={editor.data.nationality} on={v => setField("nationality", v)} />
+                  <Sel label="المدينة" v={editor.data.city} on={v => setField("city", v)} opts={CITIES} />
+                  <Sel label="نوع العمل" v={editor.data.work_type} on={v => setField("work_type", v)} opts={WORK_TYPES} />
+                  <Sel label="الحالة" v={editor.data.status} on={v => setField("status", v)} opts={STATUSES} />
+                  <Inp label="التقييم (1-5)" type="number" v={editor.data.rating} on={v => setField("rating", v)} />
+                  <Inp label="السحب الشهري (ريال)" type="number" v={editor.data.monthly_consumption} on={v => setField("monthly_consumption", v)} />
+                </div>
+                <button onClick={save} disabled={saving} className="w-full bg-emerald-700 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-emerald-800 mt-3 disabled:opacity-50">
+                  {saving ? "جاري الحفظ..." : "حفظ"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -191,7 +232,6 @@
         </label>
       );
     }
-
     function Sel({ label, v, on, opts }) {
       return (
         <label className="block">
