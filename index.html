@@ -37,7 +37,7 @@
     const cAccent = "text-indigo-600 dark:text-indigo-400";
 
     const STATUS_COLORS = {
-      "نشط":"#16A34A","جديد":"#2563EB","متوقف":"#94A3B8","منافس":"#DC2626",
+      "نشط":"#16A34A","جديد":"#2563EB","مستقطب":"#0EA5E9","متوقف":"#94A3B8","منافس":"#DC2626",
       "فرصة":"#2563EB","قيد المتابعة":"#D97706","تم الفوز":"#16A34A","تمت الخسارة":"#DC2626","مؤجل":"#94A3B8",
       "دهان":"#4F46E5","مشروع":"#D97706","معرض":"#7C3AED","مقاول":"#0891B2","استشاري":"#2563EB",
     };
@@ -45,7 +45,7 @@
     const CITIES = ["جيزان","صبيا","بيش","أبو عريش","ضمد","العارضة","العيدابي","الداير","أحد المسارحة","صامطة"];
     const SHOWROOMS_OPTS = ["معرض مخطط 5","معرض مدينة البناء","معرض المطار","معرض المطلع","معرض صبيا 1","معرض صبيا 2","معرض بيش","معرض أبو عريش 1","معرض أبو عريش 2","معرض ضمد","معرض العارضة","معرض العيدابي","معرض الداير","معرض أحد المسارحة","معرض صامطة 1","معرض صامطة 2"];
     const WORK_TYPES = ["فردي","مؤسسة"];
-    const PAINTER_STATUSES = ["نشط","جديد","متوقف","منافس"];
+    const PAINTER_STATUSES = ["نشط","مستقطب","متوقف","منافس"];
     const PROJECT_TYPES = ["فيلا","عمارة","مدرسة","مستشفى","مجمع تجاري","فندق","مبنى حكومي","استراحة"];
     const PROJECT_STATUSES = ["فرصة","قيد المتابعة","تم الفوز","تمت الخسارة","مؤجل"];
     const VISIT_TYPES = ["دهان","مشروع","معرض","مقاول","استشاري","منافس"];
@@ -79,8 +79,8 @@
 
     /* ===== إعدادات الأقسام ===== */
     const CONFIG = {
-      painters: { table:"painters", title:"الدهانون", statusField:"status", filterKeys:["city","nationality","status","rating"],
-        fields:[ {key:"name",label:"الاسم",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"nationality",label:"الجنسية",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"showroom",label:"المعرض الموجَّه إليه",type:"select",opts:SHOWROOMS_OPTS},{key:"work_type",label:"نوع العمل",type:"select",opts:WORK_TYPES},{key:"status",label:"الحالة",type:"select",opts:PAINTER_STATUSES},{key:"rating",label:"التقييم",type:"number"} ],
+      painters: { table:"painters", title:"الدهانون", statusField:"status", filterKeys:["city","showroom","nationality","status","rating"],
+        fields:[ {key:"name",label:"الاسم",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"nationality",label:"الجنسية",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"showroom",label:"المعرض الموجَّه إليه",type:"select",opts:SHOWROOMS_OPTS},{key:"work_type",label:"نوع العمل",type:"select",opts:WORK_TYPES},{key:"status",label:"الحالة",type:"select",opts:PAINTER_STATUSES},{key:"rating",label:"التقييم",type:"number"},{key:"last_visit",label:"آخر زيارة",type:"date"},{key:"notes",label:"ملاحظات",type:"text"} ],
         subtitle:r=>`${r.nationality||"—"} · ${r.city||"—"} · ${r.showroom||"بدون معرض"}`,
         kpis:rows=>[["إجمالي الدهانين",rows.length,"#4F46E5"],["النشطون",rows.filter(r=>r.status==="نشط").length,"#16A34A"],["تقييم 4 فأعلى",rows.filter(r=>(Number(r.rating)||0)>=4).length,"#D97706"]], addLabel:"إضافة دهان" },
       projects: { table:"projects", title:"المشاريع", statusField:"status", filterKeys:["city","status","type"],
