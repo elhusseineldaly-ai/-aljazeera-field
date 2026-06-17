@@ -97,7 +97,7 @@
 
     /* ===== إعدادات الأقسام ===== */
     const CONFIG = {
-      painters: { table:"painters", title:"الدهانون", statusField:"status", filterKeys:["city","showroom","nationality","status","priority","followup_status"], geo:false,
+      painters: { table:"painters", title:"الدهانين", statusField:"status", filterKeys:["city","showroom","nationality","status","priority","followup_status"], geo:false,
         fields:[ {key:"name",label:"الاسم",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"nationality",label:"الجنسية",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"showroom",label:"المعرض الموجَّه إليه",type:"select",opts:SHOWROOMS_OPTS},{key:"work_type",label:"نوع العمل",type:"select",opts:WORK_TYPES},{key:"status",label:"الحالة",type:"select",opts:PAINTER_STATUSES},{key:"rating",label:"التقييم",type:"number"},{key:"priority",label:"أولوية المتابعة",type:"select",opts:PRIORITIES},{key:"next_followup",label:"المتابعة القادمة",type:"date"},{key:"followup_status",label:"حالة المتابعة",type:"select",opts:FOLLOWUP_STATUSES},{key:"last_visit",label:"آخر زيارة",type:"date"},{key:"last_contact",label:"آخر تواصل",type:"date"},{key:"notes",label:"ملاحظات",type:"text"} ],
         subtitle:r=>`${r.nationality||"—"} · ${r.city||"—"} · ${r.showroom||"بدون معرض"}`,
         kpis:rows=>[["إجمالي الدهانين",rows.length,"#4F46E5"],["النشطون",rows.filter(r=>r.status==="نشط").length,"#16A34A"],["تقييم 4 فأعلى",rows.filter(r=>(Number(r.rating)||0)>=4).length,"#D97706"]], addLabel:"إضافة دهان" },
@@ -667,7 +667,7 @@
       return (
         <div className="space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Kpi label="الدهانون" value={painters.length} color="#4F46E5"/>
+            <Kpi label="الدهانين" value={painters.length} color="#4F46E5"/>
             <Kpi label="النشطون" value={painters.filter(p=>p.status==="نشط").length} color="#16A34A"/>
             <Kpi label="المشاريع" value={projects.length} color="#D97706"/>
             <Kpi label="مشاريع مكتسبة" value={won} color="#0891B2"/>
@@ -680,7 +680,7 @@
           {/* رسوم التوزيع الحلقية */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Card title="المشاريع حسب الحالة">{projStatusData.length?<Donut data={projStatusData} centerLabel="مشروع"/>:empty}</Card>
-            <Card title="الدهانون حسب الحالة">{painterStatusData.length?<Donut data={painterStatusData} centerLabel="دهان"/>:empty}</Card>
+            <Card title="الدهانين حسب الحالة">{painterStatusData.length?<Donut data={painterStatusData} centerLabel="دهان"/>:empty}</Card>
           </div>
 
           {/* منحنى نشاط الزيارات */}
@@ -860,7 +860,7 @@
         const projByPainter={}; data.projects.forEach(p=>{if(p.painter)projByPainter[p.painter]=(projByPainter[p.painter]||0)+1;});
         const visByPainter={}; data.visits.forEach(v=>{const k=v.painter||v.target; if(k)visByPainter[k]=(visByPainter[k]||0)+1;});
         const rows=data.painters.map(p=>[p.name,p.city,p.status,projByPainter[p.name]||0,visByPainter[p.name]||0,p.rating||0,p.last_visit||p.last_contact||"—"]);
-        let body=kpisHtml([["الدهانون",data.painters.length],["النشطون",data.painters.filter(p=>p.status==="نشط").length],["منافسون",data.painters.filter(p=>p.status==="منافس").length]]);
+        let body=kpisHtml([["الدهانين",data.painters.length],["النشطون",data.painters.filter(p=>p.status==="نشط").length],["منافسون",data.painters.filter(p=>p.status==="منافس").length]]);
         body+="<h2>نشاط الدهانين</h2>"+tableHtml(["الاسم","المدينة","الحالة","المشاريع","الزيارات","التقييم","آخر تواصل"],rows);
         printReport("تقرير نشاط الدهانين", body);
       }
@@ -911,7 +911,7 @@
     }
 
     /* ===== التطبيق ===== */
-    const NAV=[["dashboard","اللوحة الرئيسية"],["tasks","مهامي اليوم"],["painters","الدهانون"],["projects","المشاريع"],["contractors","المقاولون"],["visits","الزيارات"],["trainings","التدريبات"],["competitors","المنافسون"],["products","المنتجات"],["insights","رؤى ذكية"],["timeline","سجل النشاط"],["reports","التقارير"]];
+    const NAV=[["dashboard","اللوحة الرئيسية"],["tasks","مهامي اليوم"],["painters","الدهانين"],["projects","المشاريع"],["contractors","المقاولون"],["visits","الزيارات"],["trainings","التدريبات"],["competitors","المنافسون"],["products","المنتجات"],["insights","رؤى ذكية"],["timeline","سجل النشاط"],["reports","التقارير"]];
     const TITLES=Object.fromEntries(NAV);
 
     function App() {
