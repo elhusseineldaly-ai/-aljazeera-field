@@ -20,11 +20,13 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     const SUPABASE_URL = "https://pdjjlzmldrvhhurtulma.supabase.co";
     const SUPABASE_KEY = "sb_publishable_6bwC9B-Q20VG09Bq6bUXow_6xq3qdGh";
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const STORAGE_BUCKET = "media";
+    const CURRENT_USER = "أبو فيصل";
 
     /* ===== ثوابت التصميم ===== */
     const cCard = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 shadow-sm";
@@ -40,6 +42,8 @@
       "نشط":"#16A34A","جديد":"#2563EB","مستقطب":"#0EA5E9","متوقف":"#94A3B8","منافس":"#DC2626",
       "فرصة":"#2563EB","قيد المتابعة":"#D97706","تم الفوز":"#16A34A","تمت الخسارة":"#DC2626","مؤجل":"#94A3B8",
       "دهان":"#4F46E5","مشروع":"#D97706","معرض":"#7C3AED","مقاول":"#0891B2","استشاري":"#2563EB",
+      "VIP":"#7C3AED","واعد":"#16A34A","يحتاج متابعة":"#DC2626","عادي":"#64748B",
+      "مجدولة":"#2563EB","تمت":"#16A34A","مؤجلة":"#D97706","ملغاة":"#94A3B8","متأخرة":"#DC2626",
     };
     const COLORS = ["#4F46E5","#7C3AED","#0891B2","#D97706","#16A34A","#DC2626","#0EA5E9","#9333EA"];
     const CITIES = ["جيزان","صبيا","بيش","أبو عريش","ضمد","العارضة","العيدابي","الداير","أحد المسارحة","صامطة"];
@@ -51,6 +55,12 @@
     const PROJECT_TYPES = ["فيلا","عمارة","مدرسة","مستشفى","مجمع تجاري","فندق","مبنى حكومي","استراحة"];
     const PROJECT_STATUSES = ["فرصة","قيد المتابعة","تم الفوز","تمت الخسارة","مؤجل"];
     const VISIT_TYPES = ["دهان","مشروع","معرض","مقاول","استشاري","منافس"];
+
+    /* ===== ثوابت جديدة ===== */
+    const FOLLOWUP_STATUSES = ["مجدولة","تمت","مؤجلة","ملغاة"];
+    const RISK_LEVELS = ["منخفض","متوسط","عالي","حرج"];
+    const RISK_COLORS = { "منخفض":"#16A34A","متوسط":"#D97706","عالي":"#DC2626","حرج":"#991B1B" };
+    const RATING_COLORS = { "VIP":"#7C3AED","واعد":"#16A34A","يحتاج متابعة":"#DC2626","عادي":"#64748B" };
 
     /* ===== كتالوج المنتجات ===== */
     const CAT_COLORS = { "داخلي":"#16A34A","خارجي":"#D97706","معاجين":"#7C3AED","أسقف":"#2563EB","عوازل":"#0891B2","خزانات":"#DC2626" };
@@ -69,6 +79,7 @@
       { cat:"عوازل", name:"فليكس جارد", desc:"عازل مرن متعدد الاستخدامات", benefits:["مرونة عالية","يتحمل الحركة"], uses:["الأسطح","الخزانات"], comp:["Sigma Flex"] },
       { cat:"خزانات", name:"جاز تانك", desc:"دهان إيبوكسي آمن لخزانات مياه الشرب", benefits:["معتمد صحياً","مقاوم للطحالب"], uses:["خزانات مياه الشرب"], comp:["Hempel Tank"] },
     ];
+    const PRODUCT_NAMES = PRODUCTS.map(p=>p.name);
     const RECO_MAP = {
       "فيلا - واجهات خارجية":["رويال","ماكسم","نيوتيكس","سالت"],
       "فيلا - تشطيب داخلي فاخر":["نوفال","جرين","إمبرور"],
@@ -81,31 +92,73 @@
 
     /* ===== إعدادات الأقسام ===== */
     const CONFIG = {
-      painters: { table:"painters", title:"الدهانون", statusField:"status", filterKeys:["city","showroom","nationality","status","priority","rating"],
-        fields:[ {key:"name",label:"الاسم",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"nationality",label:"الجنسية",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"showroom",label:"المعرض الموجَّه إليه",type:"select",opts:SHOWROOMS_OPTS},{key:"work_type",label:"نوع العمل",type:"select",opts:WORK_TYPES},{key:"status",label:"الحالة",type:"select",opts:PAINTER_STATUSES},{key:"rating",label:"التقييم",type:"number"},{key:"priority",label:"أولوية المتابعة",type:"select",opts:PRIORITIES},{key:"next_followup",label:"المتابعة القادمة",type:"date"},{key:"last_visit",label:"آخر زيارة",type:"date"},{key:"notes",label:"ملاحظات",type:"text"} ],
+      painters: { table:"painters", title:"الدهانون", statusField:"status", filterKeys:["city","showroom","nationality","status","priority","followup_status"], geo:false,
+        fields:[ {key:"name",label:"الاسم",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"nationality",label:"الجنسية",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"showroom",label:"المعرض الموجَّه إليه",type:"select",opts:SHOWROOMS_OPTS},{key:"work_type",label:"نوع العمل",type:"select",opts:WORK_TYPES},{key:"status",label:"الحالة",type:"select",opts:PAINTER_STATUSES},{key:"rating",label:"التقييم",type:"number"},{key:"priority",label:"أولوية المتابعة",type:"select",opts:PRIORITIES},{key:"next_followup",label:"المتابعة القادمة",type:"date"},{key:"followup_status",label:"حالة المتابعة",type:"select",opts:FOLLOWUP_STATUSES},{key:"last_visit",label:"آخر زيارة",type:"date"},{key:"last_contact",label:"آخر تواصل",type:"date"},{key:"notes",label:"ملاحظات",type:"text"} ],
         subtitle:r=>`${r.nationality||"—"} · ${r.city||"—"} · ${r.showroom||"بدون معرض"}`,
         kpis:rows=>[["إجمالي الدهانين",rows.length,"#4F46E5"],["النشطون",rows.filter(r=>r.status==="نشط").length,"#16A34A"],["تقييم 4 فأعلى",rows.filter(r=>(Number(r.rating)||0)>=4).length,"#D97706"]], addLabel:"إضافة دهان" },
-      projects: { table:"projects", title:"المشاريع", statusField:"status", filterKeys:["city","status","type"],
-        fields:[ {key:"name",label:"اسم المشروع",type:"text"},{key:"type",label:"النوع",type:"select",opts:PROJECT_TYPES},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"owner",label:"المالك",type:"text"},{key:"contractor",label:"المقاول",type:"text"},{key:"painter",label:"الدهان المسؤول",type:"text"},{key:"stage",label:"المرحلة",type:"text"},{key:"status",label:"الحالة",type:"select",opts:PROJECT_STATUSES},{key:"value",label:"القيمة المتوقعة",type:"number",suffix:" ر.س"},{key:"win_prob",label:"نسبة الفوز",type:"number",suffix:" %"},{key:"notes",label:"ملاحظات",type:"text"} ],
+      projects: { table:"projects", title:"المشاريع", statusField:"status", filterKeys:["city","status","type","priority","risk_level"], geo:true,
+        fields:[ {key:"name",label:"اسم المشروع",type:"text"},{key:"type",label:"النوع",type:"select",opts:PROJECT_TYPES},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"owner",label:"المالك",type:"text"},{key:"contractor",label:"المقاول",type:"ref",refTable:"contractors"},{key:"painter",label:"الدهان المسؤول",type:"ref",refTable:"painters"},{key:"stage",label:"المرحلة",type:"text"},{key:"status",label:"الحالة",type:"select",opts:PROJECT_STATUSES},{key:"priority",label:"أولوية المشروع",type:"select",opts:["عالية","متوسطة","منخفضة"]},{key:"risk_level",label:"درجة خطر الخسارة",type:"select",opts:RISK_LEVELS},{key:"value",label:"قيمة الفرصة البيعية",type:"number",suffix:" ر.س"},{key:"win_prob",label:"نسبة الفوز",type:"number",suffix:" %"},{key:"expected_revenue",label:"الإيراد المتوقع",type:"number",suffix:" ر.س"},{key:"products",label:"المنتجات المقترحة",type:"products"},{key:"next_followup",label:"المتابعة القادمة",type:"date"},{key:"followup_status",label:"حالة المتابعة",type:"select",opts:FOLLOWUP_STATUSES},{key:"images",label:"صور المشروع",type:"images"},{key:"notes",label:"ملاحظات",type:"text"} ],
         subtitle:r=>`${r.type||"—"} · ${r.city||"—"} · ${r.painter||"—"}`,
-        kpis:rows=>[["إجمالي المشاريع",rows.length,"#4F46E5"],["تم الفوز",rows.filter(r=>r.status==="تم الفوز").length,"#16A34A"],["قيمة المشاريع",rows.reduce((a,r)=>a+(Number(r.value)||0),0).toLocaleString(),"#D97706"]], addLabel:"إضافة مشروع" },
-      contractors: { table:"contractors", title:"المقاولون", statusField:null, filterKeys:["city"],
-        fields:[ {key:"name",label:"اسم المقاول",type:"text"},{key:"contact",label:"الشخص المسؤول",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"projects_count",label:"عدد المشاريع",type:"number"},{key:"fav_competitor",label:"المنافس المفضّل",type:"text"},{key:"rating",label:"التقييم",type:"number"},{key:"notes",label:"ملاحظات",type:"text"} ],
+        kpis:rows=>[["إجمالي المشاريع",rows.length,"#4F46E5"],["تم الفوز",rows.filter(r=>r.status==="تم الفوز").length,"#16A34A"],["قيمة الفرص",rows.reduce((a,r)=>a+(Number(r.value)||0),0).toLocaleString(),"#D97706"]], addLabel:"إضافة مشروع" },
+      contractors: { table:"contractors", title:"المقاولون", statusField:null, filterKeys:["city","priority"], geo:false,
+        fields:[ {key:"name",label:"اسم المقاول",type:"text"},{key:"contact",label:"الشخص المسؤول",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"projects_count",label:"عدد المشاريع",type:"number"},{key:"fav_competitor",label:"المنافس المفضّل",type:"text"},{key:"rating",label:"التقييم",type:"number"},{key:"priority",label:"أولوية المتابعة",type:"select",opts:PRIORITIES},{key:"next_followup",label:"المتابعة القادمة",type:"date"},{key:"followup_status",label:"حالة المتابعة",type:"select",opts:FOLLOWUP_STATUSES},{key:"notes",label:"ملاحظات",type:"text"} ],
         subtitle:r=>`${r.contact||"—"} · ${r.phone||"—"} · ${r.city||"—"}`,
         kpis:rows=>[["إجمالي المقاولين",rows.length,"#0891B2"],["إجمالي المشاريع",rows.reduce((a,r)=>a+(Number(r.projects_count)||0),0),"#D97706"],["يفضّل منافساً",rows.filter(r=>r.fav_competitor&&r.fav_competitor!=="-").length,"#DC2626"]], addLabel:"إضافة مقاول" },
-      visits: { table:"visits", title:"الزيارات", statusField:"type", filterKeys:["type"],
-        fields:[ {key:"target",label:"الجهة / الاسم",type:"text"},{key:"type",label:"نوع الزيارة",type:"select",opts:VISIT_TYPES},{key:"date",label:"التاريخ",type:"date"},{key:"location",label:"الموقع",type:"text"},{key:"goals",label:"الهدف",type:"text"},{key:"results",label:"النتيجة",type:"text"} ],
+      visits: { table:"visits", title:"الزيارات", statusField:"type", filterKeys:["type"], geo:true,
+        fields:[ {key:"target",label:"الجهة / الاسم",type:"text"},{key:"type",label:"نوع الزيارة",type:"select",opts:VISIT_TYPES},{key:"painter",label:"الدهان المرتبط",type:"ref",refTable:"painters"},{key:"project",label:"المشروع المرتبط",type:"ref",refTable:"projects"},{key:"contractor",label:"المقاول المرتبط",type:"ref",refTable:"contractors"},{key:"date",label:"التاريخ",type:"date"},{key:"location",label:"الموقع",type:"text"},{key:"goals",label:"الهدف",type:"text"},{key:"results",label:"النتيجة",type:"text"},{key:"products",label:"المنتجات المعروضة",type:"products"},{key:"next_followup",label:"المتابعة القادمة",type:"date"},{key:"images",label:"صور الزيارة",type:"images"} ],
         subtitle:r=>`${r.type||"—"} · ${r.date||"—"} · ${r.location||"—"}`,
         kpis:rows=>[["إجمالي الزيارات",rows.length,"#7C3AED"],["زيارات الدهانين",rows.filter(r=>r.type==="دهان").length,"#16A34A"],["زيارات المشاريع",rows.filter(r=>r.type==="مشروع").length,"#D97706"]], addLabel:"إضافة زيارة" },
-      trainings: { table:"trainings", title:"التدريبات", statusField:"topic", filterKeys:["topic","location"],
+      trainings: { table:"trainings", title:"التدريبات", statusField:"topic", filterKeys:["topic","location"], geo:false,
         fields:[ {key:"name",label:"اسم التدريب",type:"text"},{key:"topic",label:"الموضوع",type:"text"},{key:"date",label:"التاريخ",type:"date"},{key:"location",label:"الموقع",type:"text"},{key:"trainer",label:"المدرب",type:"text"},{key:"attendees",label:"عدد الحضور",type:"number"} ],
         subtitle:r=>`${r.date||"—"} · ${r.location||"—"} · ${r.trainer||"—"}`,
         kpis:rows=>[["التدريبات",rows.length,"#0891B2"],["إجمالي الحضور",rows.reduce((a,r)=>a+(Number(r.attendees)||0),0),"#16A34A"],["المواضيع",new Set(rows.map(r=>r.topic)).size,"#D97706"]], addLabel:"إضافة تدريب" },
-      competitors: { table:"competitors", title:"المنافسون", statusField:null, filterKeys:["competitor"],
-        fields:[ {key:"competitor",label:"المنافس",type:"text"},{key:"product",label:"المنتج",type:"text"},{key:"price",label:"السعر",type:"text"},{key:"strengths",label:"نقاط القوة",type:"text"},{key:"weaknesses",label:"نقاط الضعف",type:"text"},{key:"project",label:"المشروع المرتبط",type:"text"},{key:"notes",label:"ملاحظات",type:"text"} ],
+      competitors: { table:"competitors", title:"المنافسون", statusField:null, filterKeys:["competitor"], geo:true,
+        fields:[ {key:"competitor",label:"المنافس",type:"text"},{key:"product",label:"المنتج",type:"text"},{key:"price",label:"السعر",type:"text"},{key:"strengths",label:"نقاط القوة",type:"text"},{key:"weaknesses",label:"نقاط الضعف",type:"text"},{key:"project",label:"المشروع المرتبط",type:"ref",refTable:"projects"},{key:"images",label:"صور الرصد",type:"images"},{key:"notes",label:"ملاحظات",type:"text"} ],
         subtitle:r=>`${r.product||"—"} · ${r.price||"—"}`,
         kpis:rows=>[["سجلات الرصد",rows.length,"#DC2626"],["المنافسون",new Set(rows.map(r=>r.competitor)).size,"#D97706"],["مرتبط بمشاريع",rows.filter(r=>r.project&&r.project!=="-").length,"#4F46E5"]], addLabel:"إضافة رصد" },
     };
+
+    /* ===== أدوات مساعدة جديدة ===== */
+    const TODAY = ()=>new Date().toISOString().slice(0,10);
+    const daysAgo = s=>s?Math.round((Date.now()-new Date(s).getTime())/86400000):9999;
+    const mapsUrl = (lat,lng)=>`https://www.google.com/maps?q=${lat},${lng}`;
+    const toArr = v=>Array.isArray(v)?v:(v?(()=>{try{const x=JSON.parse(v);return Array.isArray(x)?x:[];}catch(e){return [];}})():[]);
+    const splitProducts = v=>String(v||"").split(",").map(s=>s.trim()).filter(Boolean);
+
+    async function logActivity(action, table, label, name){
+      try{ await db.from("activity_log").insert([{ action, entity:table, entity_label:label, record_name:name||"", user_name:CURRENT_USER }]); }
+      catch(e){ /* الجدول قد لا يكون منشأ بعد */ }
+    }
+    function getGeo(){
+      return new Promise(resolve=>{
+        if(!navigator.geolocation){ resolve(null); return; }
+        navigator.geolocation.getCurrentPosition(
+          p=>resolve({lat:+p.coords.latitude.toFixed(6),lng:+p.coords.longitude.toFixed(6)}),
+          ()=>resolve(null), { enableHighAccuracy:true, timeout:6000 }
+        );
+      });
+    }
+    async function uploadImages(files, folder){
+      const urls=[];
+      for(const f of files){
+        const ext=(f.name.split(".").pop()||"jpg").toLowerCase();
+        const path=`${folder}/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+        const { error } = await db.storage.from(STORAGE_BUCKET).upload(path, f, { upsert:false });
+        if(error){ alert("تعذّر رفع الصورة: "+error.message+"\nتأكد من إنشاء حاوية التخزين media."); continue; }
+        const { data } = db.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+        urls.push(data.publicUrl);
+      }
+      return urls;
+    }
+    /* التقييم التلقائي للدهان */
+    function autoRating(p, stats){
+      const rate=Number(p.rating)||0, proj=stats.projects||0, won=stats.won||0, vis=stats.visits||0, gap=daysAgo(stats.lastVisit||p.last_visit);
+      if(p.status==="منافس") return "يحتاج متابعة";
+      if(rate>=4 && (won>=1||proj>=2) && p.status==="نشط") return "VIP";
+      if((proj>=1||vis>=2||rate>=3) && p.status!=="متوقف") return "واعد";
+      if(gap>45 || p.status==="متوقف" || (p.next_followup && p.next_followup<TODAY() && p.followup_status!=="تمت")) return "يحتاج متابعة";
+      return "عادي";
+    }
 
     /* ===== أيقونات ===== */
     function Icon({ n, s=18, c="" }) {
@@ -120,6 +173,15 @@
         list:<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>,
         chevron:<path d="M15 18l-6-6 6-6"/>,
         filter:<path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3z"/>,
+        pin:<g><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></g>,
+        camera:<g><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></g>,
+        clock:<g><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></g>,
+        check:<path d="M20 6 9 17l-5-5"/>,
+        bolt:<path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/>,
+        link:<g><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></g>,
+        printer:<g><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></g>,
+        plus:<path d="M12 5v14M5 12h14"/>,
+        star:<path d="M12 2l3 6.5 7 .9-5 4.8 1.3 7L12 18l-6.3 3.2L7 14.2l-5-4.8 7-.9z"/>,
       }[n];
       return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}>{ic}</svg>;
     }
@@ -127,42 +189,163 @@
     /* ===== مكونات مشتركة ===== */
     function Stars({ n }) { return <span className="whitespace-nowrap">{[1,2,3,4,5].map(i=><span key={i} style={{color:i<=n?"#D97706":"#cbd5e1"}}>★</span>)}</span>; }
     function Badge({ status }) { if(!status) return null; const c=STATUS_COLORS[status]||"#64748B"; return <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full whitespace-nowrap" style={{color:c,background:c+"1f"}}>{status}</span>; }
+    function Pill({ text, color }) { const c=color||"#64748B"; return <span className="text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{color:c,background:c+"1f"}}>{text}</span>; }
     function Bars({ data }) { const max=Math.max(1,...data.map(d=>d.value)); return (<div className="space-y-2.5">{data.map((d,i)=>(<div key={i} className="text-xs"><div className="flex justify-between mb-1"><span className="font-medium">{d.label}</span><span className="font-bold">{Number(d.value).toLocaleString()}</span></div><div className={"h-2 rounded-full overflow-hidden "+cTrack}><div className="h-2 rounded-full" style={{width:(d.value/max*100)+"%",background:d.color||COLORS[i%COLORS.length]}}/></div></div>))}</div>); }
     function Kpi({ label, value, color }) { return (<div className={"relative rounded-2xl p-4 overflow-hidden "+cCard}><div className="absolute top-0 right-0 h-full w-1" style={{background:color}}/><div className={"text-xs font-medium "+cMuted}>{label}</div><div className="text-xl font-extrabold mt-1" style={{color}}>{value}</div></div>); }
     function Inp({ label, v, on, type="text" }) { return (<label className="block"><span className={"text-xs font-medium "+cMuted}>{label}</span><input type={type} value={v} onChange={e=>on(e.target.value)} className={"w-full rounded-lg px-3 py-2 text-sm outline-none mt-1 "+cInput}/></label>); }
     function Sel({ label, v, on, opts }) { return (<label className="block"><span className={"text-xs font-medium "+cMuted}>{label}</span><select value={v} onChange={e=>on(e.target.value)} className={"w-full rounded-lg px-3 py-2 text-sm outline-none mt-1 "+cInput}>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select></label>); }
 
+    /* حقل اختيار مرجعي من جدول آخر */
+    function RefField({ label, v, on, options }) {
+      return (<label className="block"><span className={"text-xs font-medium "+cMuted}>{label}</span>
+        <input list={"ref-"+label} value={v||""} onChange={e=>on(e.target.value)} placeholder="اكتب أو اختر..." className={"w-full rounded-lg px-3 py-2 text-sm outline-none mt-1 "+cInput}/>
+        <datalist id={"ref-"+label}>{options.map(o=><option key={o} value={o}/>)}</datalist>
+      </label>);
+    }
+    /* حقل اختيار منتجات متعدد */
+    function ProductsField({ label, v, on }) {
+      const sel=splitProducts(v);
+      const toggle=n=>{ const s=new Set(sel); s.has(n)?s.delete(n):s.add(n); on([...s].join(", ")); };
+      return (<div className="sm:col-span-2"><span className={"text-xs font-medium "+cMuted}>{label}</span>
+        <div className="flex flex-wrap gap-1.5 mt-1.5">{PRODUCT_NAMES.map(n=>(<button type="button" key={n} onClick={()=>toggle(n)} className={"px-2.5 py-1 rounded-lg text-xs font-bold transition "+(sel.includes(n)?cBtn:cTrack+" "+cMuted+" "+cHover)}>{n}</button>))}</div>
+      </div>);
+    }
+    /* حقل رفع الصور */
+    function ImagesField({ label, v, on, folder }) {
+      const imgs=toArr(v); const [busy,setBusy]=useState(false); const ref=useRef();
+      async function pick(e){ const files=[...e.target.files]; if(!files.length)return; setBusy(true);
+        const urls=await uploadImages(files, folder); on([...imgs,...urls]); setBusy(false); if(ref.current)ref.current.value=""; }
+      return (<div className="sm:col-span-2"><span className={"text-xs font-medium "+cMuted}>{label}</span>
+        <div className="flex flex-wrap gap-2 mt-1.5">
+          {imgs.map((u,i)=>(<div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200 dark:border-slate-700"><img src={u} className="w-full h-full object-cover"/><button type="button" onClick={()=>on(imgs.filter((_,j)=>j!==i))} className="absolute top-0 left-0 bg-red-600 text-white w-4 h-4 text-[10px] flex items-center justify-center rounded-br">×</button></div>))}
+          <button type="button" onClick={()=>ref.current&&ref.current.click()} disabled={busy} className={"w-16 h-16 rounded-lg flex flex-col items-center justify-center text-xs gap-1 "+cTrack+" "+cMuted+" "+cHover+" disabled:opacity-50"}><Icon n="camera" s={18}/>{busy?"رفع...":"إضافة"}</button>
+          <input ref={ref} type="file" accept="image/*" multiple className="hidden" onChange={pick}/>
+        </div>
+      </div>);
+    }
+    function Gallery({ imgs }) {
+      const arr=toArr(imgs); if(!arr.length) return null;
+      return (<div><div className="text-xs font-bold mb-2">معرض الصور ({arr.length})</div><div className="flex flex-wrap gap-2">{arr.map((u,i)=>(<a key={i} href={u} target="_blank" className="w-20 h-20 rounded-xl overflow-hidden border border-gray-200 dark:border-slate-700 block"><img src={u} className="w-full h-full object-cover"/></a>))}</div></div>);
+    }
+
     function exportCSV(cfg, rows) {
       const headers=cfg.fields.map(f=>f.label);
-      const lines=rows.map(r=>cfg.fields.map(f=>'"'+String(r[f.key]??"").replace(/"/g,'""')+'"').join(","));
+      const lines=rows.map(r=>cfg.fields.map(f=>'"'+String(Array.isArray(r[f.key])?toArr(r[f.key]).length+" صورة":(r[f.key]??"")).replace(/"/g,'""')+'"').join(","));
       const csv="\uFEFF"+[headers.join(","),...lines].join("\n");
       const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
       const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=cfg.title+".csv"; a.click(); URL.revokeObjectURL(a.href);
     }
 
+    /* ===== لوحة العلاقات داخل التفاصيل ===== */
+    function RelatedPanel({ cfg, record, onGo }) {
+      const [data,setData]=useState(null);
+      useEffect(()=>{(async()=>{
+        const name=record[cfg.fields[0].key];
+        if(cfg.table==="painters"){
+          const [pr,viP,viT]=await Promise.all([
+            db.from("projects").select("*").eq("painter",name),
+            db.from("visits").select("*").eq("painter",name),
+            db.from("visits").select("*").eq("target",name),
+          ]);
+          const vmap={}; [...(viP.data||[]),...(viT.data||[])].forEach(x=>vmap[x.id]=x);
+          setData({projects:pr.data||[],visits:Object.values(vmap)});
+        } else if(cfg.table==="projects"){
+          const vi=await db.from("visits").select("*").eq("project",name);
+          setData({visits:vi.data||[]});
+        } else if(cfg.table==="contractors"){
+          const [pr,vi]=await Promise.all([
+            db.from("projects").select("*").eq("contractor",name),
+            db.from("visits").select("*").eq("contractor",name),
+          ]);
+          setData({projects:pr.data||[],visits:vi.data||[]});
+        } else setData({});
+      })()},[record.id]);
+      if(!data) return <div className={"text-xs "+cMuted}>جاري تحميل العلاقات...</div>;
+
+      const Row=({title,items,sub,go})=>(
+        <div><div className="text-xs font-bold mb-2">{title} ({items.length})</div>
+          {items.length?<div className="space-y-1.5">{items.slice(0,8).map((x,i)=>(<button key={i} onClick={()=>onGo&&onGo(go)} className={"w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-right text-xs "+cTrack+" "+cHover}><span className="font-semibold truncate">{x.name||x.target}</span><span className={cMuted+" truncate"}>{sub(x)}</span></button>))}</div>:<div className={"text-xs "+cMuted}>لا يوجد</div>}
+        </div>
+      );
+
+      if(cfg.table==="painters"){
+        const p=record; const projects=data.projects, visits=data.visits;
+        const won=projects.filter(x=>x.status==="تم الفوز").length;
+        const lastVisit=visits.map(v=>v.date).filter(Boolean).sort().slice(-1)[0];
+        const lastProject=[...projects].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")))[0];
+        const prods={}; [...visits,...projects].forEach(x=>splitProducts(x.products).forEach(n=>prods[n]=(prods[n]||0)+1));
+        const used=Object.keys(prods); const fav=Object.entries(prods).sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]);
+        const rating=autoRating(p,{projects:projects.length,won,visits:visits.length,lastVisit});
+        const cells=[["عدد المشاريع",projects.length],["عدد الزيارات",visits.length],["مشاريع مكتسبة",won],["آخر زيارة",lastVisit||p.last_visit||"—"],["آخر مشروع",lastProject?lastProject.name:"—"],["آخر تواصل",p.last_contact||lastVisit||"—"]];
+        return (<div className="space-y-4">
+          <div className="flex items-center gap-2"><span className={"text-xs "+cMuted}>التصنيف التلقائي:</span><Pill text={rating} color={RATING_COLORS[rating]}/></div>
+          <div className="grid grid-cols-3 gap-2">{cells.map(([l,val])=>(<div key={l} className={"rounded-xl p-2.5 "+cTrack}><div className={"text-[11px] "+cMuted}>{l}</div><div className="text-sm font-bold mt-0.5 truncate">{val}</div></div>))}</div>
+          <div><div className="text-xs font-bold mb-1.5">المنتجات المستخدمة/المفضلة</div>{used.length?<div className="flex flex-wrap gap-1.5">{used.map(n=><Pill key={n} text={n} color={fav.includes(n)?"#7C3AED":"#0891B2"}/>)}</div>:<div className={"text-xs "+cMuted}>لم تُسجَّل منتجات بعد</div>}</div>
+          <Row title="مشاريع هذا الدهان" items={projects} sub={x=>`${x.status||""} · ${Number(x.value||0).toLocaleString()} ر.س`} go="projects"/>
+          <Row title="زيارات مرتبطة" items={visits} sub={x=>`${x.type||""} · ${x.date||""}`} go="visits"/>
+        </div>);
+      }
+      if(cfg.table==="projects"){
+        return (<div className="space-y-4">
+          <div className="flex flex-wrap gap-2 text-xs">
+            <div className={"rounded-xl px-3 py-2 "+cTrack}>المقاول: <b>{record.contractor||"—"}</b></div>
+            <div className={"rounded-xl px-3 py-2 "+cTrack}>الدهان: <b>{record.painter||"—"}</b></div>
+          </div>
+          <Row title="زيارات هذا المشروع" items={data.visits} sub={x=>`${x.type||""} · ${x.date||""}`} go="visits"/>
+        </div>);
+      }
+      if(cfg.table==="contractors"){
+        return (<div className="space-y-4">
+          <Row title="مشاريع هذا المقاول" items={data.projects} sub={x=>`${x.status||""} · ${x.city||""}`} go="projects"/>
+          <Row title="زيارات مرتبطة" items={data.visits} sub={x=>`${x.type||""} · ${x.date||""}`} go="visits"/>
+        </div>);
+      }
+      if(cfg.table==="visits"){
+        const links=[["دهان",record.painter,"painters"],["مشروع",record.project,"projects"],["مقاول",record.contractor,"contractors"]].filter(x=>x[1]);
+        return (<div className="space-y-2">{links.length?links.map(([t,n,go])=>(<button key={t} onClick={()=>onGo&&onGo(go)} className={"w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs text-right "+cTrack+" "+cHover}><span className="font-semibold">{n}</span><Badge status={t}/></button>)):<div className={"text-xs "+cMuted}>لا توجد روابط لهذه الزيارة</div>}</div>);
+      }
+      return null;
+    }
+
     /* ===== قسم عام ===== */
-    function Section({ cfg }) {
+    function Section({ cfg, onGo, prefill, clearPrefill }) {
       const [rows,setRows]=useState([]); const [loading,setLoading]=useState(true); const [error,setError]=useState("");
       const [q,setQ]=useState(""); const [filters,setFilters]=useState({}); const [vmode,setVmode]=useState("cards");
       const [view,setView]=useState("list"); const [selId,setSelId]=useState(null);
-      const [editor,setEditor]=useState(null); const [saving,setSaving]=useState(false);
+      const [editor,setEditor]=useState(null); const [saving,setSaving]=useState(false); const [geoMsg,setGeoMsg]=useState("");
+      const [refOpts,setRefOpts]=useState({});
+
       async function load(){ setLoading(true);setError("");
         const {data,error}=await db.from(cfg.table).select("*").order("created_at",{ascending:false});
         if(error)setError("تعذّر تحميل البيانات: "+error.message); else setRows(data||[]); setLoading(false);
       }
-      useEffect(()=>{load()},[]);
+      useEffect(()=>{ load();
+        const refTables=[...new Set(cfg.fields.filter(f=>f.type==="ref").map(f=>f.refTable))];
+        refTables.forEach(async t=>{ const {data}=await db.from(t).select("name"); setRefOpts(o=>({...o,[t]:(data||[]).map(x=>x.name).filter(Boolean)})); });
+      },[cfg.table]);
+
+      /* فتح محرر مسبق التعبئة (الربط المباشر) */
+      useEffect(()=>{ if(prefill){ openAdd(prefill); clearPrefill&&clearPrefill(); } },[prefill]);
+
       const selected=rows.find(r=>r.id===selId)||null;
-      function emptyData(){ const o={}; cfg.fields.forEach(f=>o[f.key]=f.type==="number"?0:(f.type==="select"?(f.opts[0]||""):"")); return o; }
-      function openAdd(){ setEditor({mode:"add",id:null,data:emptyData()}); }
-      function openEdit(r){ const o={}; cfg.fields.forEach(f=>o[f.key]=r[f.key]??(f.type==="number"?0:"")); setEditor({mode:"edit",id:r.id,data:o}); }
+      function emptyData(extra){ const o={}; cfg.fields.forEach(f=>o[f.key]=f.type==="number"?0:(f.type==="images"?[]:(f.type==="select"?(f.opts[0]||""):""))); return {...o,...(extra||{})}; }
+      function openAdd(extra){ setEditor({mode:"add",id:null,data:emptyData(extra)}); setGeoMsg(""); }
+      function openEdit(r){ const o={}; cfg.fields.forEach(f=>o[f.key]=f.type==="images"?toArr(r[f.key]):(r[f.key]??(f.type==="number"?0:""))); setEditor({mode:"edit",id:r.id,data:o}); setGeoMsg(""); }
       function setField(k,v){ setEditor(e=>({...e,data:{...e.data,[k]:v}})); }
+
+      async function captureGeo(){ setGeoMsg("جاري تحديد الموقع..."); const g=await getGeo(); if(g){ setEditor(e=>({...e,data:{...e.data,lat:g.lat,lng:g.lng}})); setGeoMsg("تم تحديد الموقع ✓"); } else setGeoMsg("تعذّر تحديد الموقع"); }
+
       async function save(){ if(!String(editor.data[cfg.fields[0].key]||"").trim()){alert("اكتب "+cfg.fields[0].label+" أولاً");return;}
         setSaving(true); const payload={...editor.data};
         cfg.fields.forEach(f=>{ if(f.type==="number")payload[f.key]=Number(payload[f.key]||0); if(f.type==="date"&&!payload[f.key])payload[f.key]=null; });
+        // التقاط GPS تلقائياً عند الإضافة للأقسام الميدانية
+        if(cfg.geo && editor.mode==="add" && payload.lat==null){ const g=await getGeo(); if(g){ payload.lat=g.lat; payload.lng=g.lng; } }
         let res; if(editor.mode==="add")res=await db.from(cfg.table).insert([payload]); else res=await db.from(cfg.table).update(payload).eq("id",editor.id);
-        setSaving(false); if(res.error){alert("خطأ في الحفظ: "+res.error.message);return;} setEditor(null); await load();
+        setSaving(false); if(res.error){alert("خطأ في الحفظ: "+res.error.message);return;}
+        logActivity(editor.mode==="add"?"إضافة":"تعديل", cfg.table, cfg.title, payload[cfg.fields[0].key]);
+        setEditor(null); await load();
       }
-      async function remove(r){ if(!confirm("متأكد من الحذف؟"))return; const {error}=await db.from(cfg.table).delete().eq("id",r.id); if(error){alert("خطأ: "+error.message);return;} setView("list");setSelId(null);load(); }
+      async function remove(r){ if(!confirm("متأكد من الحذف؟"))return; const {error}=await db.from(cfg.table).delete().eq("id",r.id); if(error){alert("خطأ: "+error.message);return;} logActivity("حذف",cfg.table,cfg.title,r[cfg.fields[0].key]); setView("list");setSelId(null);load(); }
 
       const filterDefs=(cfg.filterKeys||[]).map(key=>{ const f=cfg.fields.find(x=>x.key===key);
         const opts=[...new Set(rows.map(r=>r[key]).filter(v=>v!==null&&v!==undefined&&v!==""))].map(String).sort();
@@ -170,7 +353,7 @@
       const filtered=rows.filter(r=> (q===""||cfg.fields.some(f=>String(r[f.key]||"").includes(q))) && filterDefs.every(fd=>!filters[fd.key]||filters[fd.key]==="الكل"||String(r[fd.key])===filters[fd.key]) );
       const kpis=cfg.kpis?cfg.kpis(rows):[];
       const inputType=f=>f.type==="number"?"number":f.type==="date"?"date":"text";
-      function fmt(f,v){ if(f.key==="rating")return <Stars n={Number(v)||0}/>; if(f.type==="number")return (Number(v)||0).toLocaleString()+(f.suffix||""); return v||"—"; }
+      function fmt(f,v){ if(f.key==="rating")return <Stars n={Number(v)||0}/>; if(f.type==="images")return toArr(v).length+" صورة"; if(f.key==="risk_level")return <Pill text={v||"—"} color={RISK_COLORS[v]}/>; if(f.type==="number")return (Number(v)||0).toLocaleString()+(f.suffix||""); return v||"—"; }
       const initial=r=>(r[cfg.fields[0].key]||"؟").trim()[0];
       const avatarBg=r=>STATUS_COLORS[r[cfg.statusField]]||"#4F46E5";
 
@@ -182,15 +365,25 @@
               <div className={"rounded-2xl p-6 "+cCard}>
                 <div className="flex items-center gap-4 pb-4 mb-4 border-b border-dashed" style={{borderColor:"#e5e7eb"}}>
                   <div className="w-16 h-16 rounded-2xl text-white font-extrabold text-2xl flex items-center justify-center shrink-0" style={{background:avatarBg(selected)}}>{initial(selected)}</div>
-                  <div className="min-w-0"><h2 className="text-xl font-extrabold truncate">{selected[cfg.fields[0].key]}</h2><div className="mt-1.5"><Badge status={cfg.statusField?selected[cfg.statusField]:null}/></div></div>
+                  <div className="min-w-0 flex-1"><h2 className="text-xl font-extrabold truncate">{selected[cfg.fields[0].key]}</h2><div className="mt-1.5 flex items-center gap-2 flex-wrap"><Badge status={cfg.statusField?selected[cfg.statusField]:null}/>{(selected.lat&&selected.lng)?<a href={mapsUrl(selected.lat,selected.lng)} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><Icon n="pin" s={14}/> فتح في الخرائط</a>:null}</div></div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                  {cfg.fields.slice(1).map(f=>(<div key={f.key} className="flex items-center justify-between gap-3 border-b pb-2 border-gray-100 dark:border-slate-800"><span className={"text-xs "+cMuted}>{f.label}</span><span className="font-semibold text-left break-words">{fmt(f,selected[f.key])}</span></div>))}
+                  {cfg.fields.slice(1).filter(f=>f.type!=="images"&&f.type!=="products").map(f=>(<div key={f.key} className="flex items-center justify-between gap-3 border-b pb-2 border-gray-100 dark:border-slate-800"><span className={"text-xs "+cMuted}>{f.label}</span><span className="font-semibold text-left break-words">{fmt(f,selected[f.key])}</span></div>))}
                 </div>
-                <div className="flex gap-2 mt-5">
+                {cfg.fields.filter(f=>f.type==="products").map(f=>{const pr=splitProducts(selected[f.key]);return pr.length?<div key={f.key} className="mt-4"><div className="text-xs font-bold mb-1.5">{f.label}</div><div className="flex flex-wrap gap-1.5">{pr.map(n=><Pill key={n} text={n} color="#0891B2"/>)}</div></div>:null;})}
+                {cfg.fields.some(f=>f.type==="images")&&<div className="mt-4"><Gallery imgs={selected.images}/></div>}
+                <div className="flex gap-2 mt-5 flex-wrap">
                   <button onClick={()=>openEdit(selected)} className={"flex-1 rounded-xl py-2.5 text-sm font-bold "+cBtn}>تعديل</button>
                   <button onClick={()=>remove(selected)} className="flex-1 bg-red-500/10 text-red-600 rounded-xl py-2.5 text-sm font-bold hover:bg-red-500/20">حذف</button>
                 </div>
+                {cfg.table==="painters"&&(<div className="flex gap-2 mt-2 flex-wrap">
+                  <button onClick={()=>onGo&&onGo("projects",{painter:selected.name})} className={"flex-1 rounded-xl py-2 text-xs font-bold "+cTrack+" "+cAccent+" "+cHover}>+ مشروع لهذا الدهان</button>
+                  <button onClick={()=>onGo&&onGo("visits",{painter:selected.name,target:selected.name,type:"دهان",date:TODAY()})} className={"flex-1 rounded-xl py-2 text-xs font-bold "+cTrack+" "+cAccent+" "+cHover}>+ زيارة لهذا الدهان</button>
+                </div>)}
+              </div>
+              <div className={"rounded-2xl p-5 "+cCard}>
+                <div className="flex items-center gap-2 mb-4"><Icon n="link" s={16} c={cAccent}/><h3 className="font-bold text-sm">العلاقات والنشاط المرتبط</h3></div>
+                <RelatedPanel cfg={cfg} record={selected} onGo={onGo}/>
               </div>
             </div>
           )}
@@ -213,7 +406,7 @@
                     <button onClick={()=>setVmode("cards")} className={"p-1.5 "+(vmode==="cards"?"bg-indigo-600 text-white":cMuted)} title="كروت"><Icon n="grid" s={16}/></button>
                     <button onClick={()=>setVmode("list")} className={"p-1.5 "+(vmode==="list"?"bg-indigo-600 text-white":cMuted)} title="قائمة"><Icon n="list" s={16}/></button>
                   </div>
-                  <button onClick={openAdd} className={"rounded-lg px-3 py-1.5 text-xs font-bold "+cBtn}>{cfg.addLabel}</button>
+                  <button onClick={()=>openAdd()} className={"rounded-lg px-3 py-1.5 text-xs font-bold "+cBtn}>{cfg.addLabel}</button>
                   <button onClick={()=>exportCSV(cfg,filtered)} className={"rounded-lg px-3 py-1.5 text-xs font-bold "+cAccent+" "+cTrack+" "+cHover}>تصدير</button>
                 </div>
               </div>
@@ -258,8 +451,15 @@
               <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-lg max-h-[90vh] overflow-y-auto "+cCard}>
                 <div className="flex items-center justify-between mb-4"><div className="font-bold">{editor.mode==="add"?"إضافة سجل جديد":"تعديل السجل"}</div><button onClick={()=>setEditor(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {cfg.fields.map(f=>f.type==="select"?<Sel key={f.key} label={f.label} v={editor.data[f.key]} on={v=>setField(f.key,v)} opts={f.opts}/>:<Inp key={f.key} label={f.label} type={inputType(f)} v={editor.data[f.key]} on={v=>setField(f.key,v)}/>)}
+                  {cfg.fields.map(f=>{
+                    if(f.type==="select")return <Sel key={f.key} label={f.label} v={editor.data[f.key]} on={v=>setField(f.key,v)} opts={f.opts}/>;
+                    if(f.type==="ref")return <RefField key={f.key} label={f.label} v={editor.data[f.key]} on={v=>setField(f.key,v)} options={refOpts[f.refTable]||[]}/>;
+                    if(f.type==="products")return <ProductsField key={f.key} label={f.label} v={editor.data[f.key]} on={v=>setField(f.key,v)}/>;
+                    if(f.type==="images")return <ImagesField key={f.key} label={f.label} v={editor.data[f.key]} on={v=>setField(f.key,v)} folder={cfg.table}/>;
+                    return <Inp key={f.key} label={f.label} type={inputType(f)} v={editor.data[f.key]} on={v=>setField(f.key,v)}/>;
+                  })}
                 </div>
+                {cfg.geo&&(<div className="flex items-center gap-2 mt-3"><button type="button" onClick={captureGeo} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cAccent+" "+cHover}><Icon n="pin" s={14}/> التقاط الموقع الحالي</button><span className={"text-xs "+cMuted}>{geoMsg||(editor.data.lat?`📍 ${editor.data.lat}, ${editor.data.lng}`:"يُلتقط الموقع تلقائياً عند الحفظ")}</span></div>)}
                 <button onClick={save} disabled={saving} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 disabled:opacity-50 "+cBtn}>{saving?"جاري الحفظ...":"حفظ"}</button>
               </div>
             </div>
@@ -268,20 +468,126 @@
       );
     }
 
+    /* ===== زيارة سريعة (أقل من دقيقة) ===== */
+    function QuickVisit({ open, onClose, onSaved }) {
+      const [d,setD]=useState({target:"",type:"دهان",results:"",next_followup:""});
+      const [saving,setSaving]=useState(false); const [geo,setGeo]=useState(null); const [imgs,setImgs]=useState([]);
+      useEffect(()=>{ if(open){ setD({target:"",type:"دهان",results:"",next_followup:""}); setGeo(null); setImgs([]); getGeo().then(setGeo); } },[open]);
+      if(!open) return null;
+      async function save(){ if(!d.target.trim()){alert("اكتب اسم الجهة");return;} setSaving(true);
+        const payload={ target:d.target, type:d.type, date:TODAY(), results:d.results, next_followup:d.next_followup||null, images:imgs };
+        if(geo){ payload.lat=geo.lat; payload.lng=geo.lng; }
+        if(d.type==="دهان")payload.painter=d.target; if(d.type==="مقاول")payload.contractor=d.target; if(d.type==="مشروع")payload.project=d.target;
+        const res=await db.from("visits").insert([payload]); setSaving(false);
+        if(res.error){alert("خطأ: "+res.error.message);return;}
+        logActivity("إضافة","visits","الزيارات",d.target); onSaved&&onSaved(); onClose();
+      }
+      return (<div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3" onClick={onClose}>
+        <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-md "+cCard}>
+          <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2 font-bold"><Icon n="bolt" s={16} c={cAccent}/> زيارة ميدانية سريعة</div><button onClick={onClose} className={cMuted}><Icon n="close" s={18}/></button></div>
+          <div className="space-y-3">
+            <Inp label="الجهة / الاسم" v={d.target} on={v=>setD({...d,target:v})}/>
+            <Sel label="نوع الزيارة" v={d.type} on={v=>setD({...d,type:v})} opts={VISIT_TYPES}/>
+            <Inp label="النتيجة باختصار" v={d.results} on={v=>setD({...d,results:v})}/>
+            <Inp label="موعد المتابعة القادمة" type="date" v={d.next_followup} on={v=>setD({...d,next_followup:v})}/>
+            <ImagesField label="صور سريعة" v={imgs} on={setImgs} folder="visits"/>
+            <div className={"text-xs flex items-center gap-1 "+cMuted}><Icon n="pin" s={13}/> {geo?`الموقع: ${geo.lat}, ${geo.lng}`:"جاري تحديد الموقع تلقائياً..."}</div>
+          </div>
+          <button onClick={save} disabled={saving} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 disabled:opacity-50 "+cBtn}>{saving?"جاري الحفظ...":"حفظ الزيارة"}</button>
+        </div>
+      </div>);
+    }
+
+    /* ===== مهامي اليوم ===== */
+    function TasksToday({ onGo }) {
+      const [d,setD]=useState(null);
+      async function load(){
+        const [p,pr,c]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*")]);
+        setD({painters:p.data||[],projects:pr.data||[],contractors:c.data||[]});
+      }
+      useEffect(()=>{load()},[]);
+      if(!d) return <div className={"text-center py-10 text-sm "+cMuted}>جاري تجهيز المهام...</div>;
+      const today=TODAY();
+      const tasks=[];
+      const push=(tbl,r,label)=>{ if(r.next_followup && r.followup_status!=="تمت" && r.followup_status!=="ملغاة") tasks.push({tbl,id:r.id,name:r.name,date:r.next_followup,city:r.city,prio:r.priority,label}); };
+      d.painters.forEach(r=>push("painters",r,"دهان")); d.projects.forEach(r=>push("projects",r,"مشروع")); d.contractors.forEach(r=>push("contractors",r,"مقاول"));
+      const overdue=tasks.filter(t=>t.date<today).sort((a,b)=>a.date.localeCompare(b.date));
+      const dueToday=tasks.filter(t=>t.date===today);
+      const upcoming=tasks.filter(t=>t.date>today).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,20);
+      async function done(t){ await db.from(t.tbl).update({followup_status:"تمت",last_contact:today}).eq("id",t.id); logActivity("تعديل",t.tbl,"متابعة",t.name); load(); }
+
+      const Group=({title,items,color,empty})=>(
+        <div className={"rounded-2xl p-4 "+cCard}>
+          <div className="text-sm font-bold mb-3" style={{color}}>{title} ({items.length})</div>
+          {items.length?<div className="space-y-2">{items.map((t,i)=>(
+            <div key={i} className={"flex items-center justify-between gap-2 border-b pb-2 "+cBorder}>
+              <button onClick={()=>onGo&&onGo(t.tbl)} className="min-w-0 text-right flex-1"><div className="text-sm font-semibold truncate">{t.name}</div><div className={"text-xs truncate "+cMuted}>{t.label} · {t.city||"—"} · {t.date}</div></button>
+              <div className="flex items-center gap-1.5 shrink-0">{t.prio&&t.prio!=="بدون"?<Pill text={t.prio} color={PRIORITY_COLORS[t.prio]}/>:null}<button onClick={()=>done(t)} title="تمت المتابعة" className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-600 flex items-center justify-center hover:bg-emerald-500/25"><Icon n="check" s={15}/></button></div>
+            </div>))}</div>:<div className={"text-xs "+cMuted}>{empty}</div>}
+        </div>
+      );
+      return (<div className="space-y-4">
+        <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}><h2 className="font-extrabold">مهامي اليوم</h2><p className={"text-xs mt-0.5 "+cMuted}>كل المتابعات المستحقّة عبر الدهانين والمشاريع والمقاولين · {new Date().toLocaleDateString("ar")}</p></div>
+        <div className="grid grid-cols-3 gap-3">
+          <Kpi label="متأخرة" value={overdue.length} color="#DC2626"/>
+          <Kpi label="مستحقة اليوم" value={dueToday.length} color="#D97706"/>
+          <Kpi label="قادمة" value={upcoming.length} color="#16A34A"/>
+        </div>
+        <Group title="متأخرة — تتطلب إجراءً فورياً" items={overdue} color="#DC2626" empty="لا توجد متابعات متأخرة، أحسنت."/>
+        <Group title="مستحقة اليوم" items={dueToday} color="#D97706" empty="لا مهام مجدولة لليوم."/>
+        <Group title="المتابعات القادمة" items={upcoming} color="#16A34A" empty="لا متابعات قادمة. أضف موعد متابعة من صفحة أي سجل."/>
+      </div>);
+    }
+
+    /* ===== سجل النشاط ===== */
+    function Timeline() {
+      const [rows,setRows]=useState(null); const [err,setErr]=useState("");
+      useEffect(()=>{(async()=>{ const {data,error}=await db.from("activity_log").select("*").order("created_at",{ascending:false}).limit(200);
+        if(error)setErr("تأكد من إنشاء جدول activity_log عبر سكربت SQL."); setRows(data||[]); })()},[]);
+      const actColor=a=>a==="إضافة"?"#16A34A":a==="حذف"?"#DC2626":"#D97706";
+      if(rows===null) return <div className={"text-center py-10 text-sm "+cMuted}>جاري تحميل السجل...</div>;
+      return (<div className="space-y-4">
+        <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}><h2 className="font-extrabold">سجل النشاط الموحّد</h2><p className={"text-xs mt-0.5 "+cMuted}>كل عمليات الإضافة والتعديل والحذف عبر النظام بترتيب زمني</p></div>
+        {err&&<div className="bg-amber-500/10 text-amber-700 rounded-xl p-3 text-sm">{err}</div>}
+        {rows.length===0?<div className={"rounded-2xl p-10 text-center text-sm "+cCard+" "+cMuted}>لا يوجد نشاط مسجّل بعد. ستظهر العمليات هنا تلقائياً.</div>:(
+          <div className={"rounded-2xl p-4 "+cCard}><div className="space-y-3">{rows.map((r,i)=>(
+            <div key={i} className={"flex items-start gap-3 border-b pb-3 last:border-b-0 "+cBorder}>
+              <span className="w-2.5 h-2.5 rounded-full mt-1.5 shrink-0" style={{background:actColor(r.action)}}/>
+              <div className="min-w-0 flex-1"><div className="text-sm font-semibold"><span style={{color:actColor(r.action)}}>{r.action}</span> · {r.entity_label} <span className="font-extrabold">{r.record_name}</span></div><div className={"text-xs mt-0.5 "+cMuted}>{r.user_name} · {r.created_at?new Date(r.created_at).toLocaleString("ar"):""}</div></div>
+            </div>))}</div></div>
+        )}
+      </div>);
+    }
+
     /* ===== اللوحة الرئيسية ===== */
-    function Dashboard() {
+    function Dashboard({ onGo }) {
       const [d,setD]=useState(null);
       useEffect(()=>{(async()=>{
-        const [p,pr,c,v,t]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*")]);
-        setD({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[]});
+        const [p,pr,c,v,t,co]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*"),db.from("competitors").select("*")]);
+        setD({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[],competitors:co.data||[]});
       })()},[]);
       if(!d) return <div className={"text-center py-10 text-sm "+cMuted}>جاري تحميل اللوحة...</div>;
-      const {painters,projects,contractors,visits,trainings}=d;
+      const {painters,projects,contractors,visits,trainings,competitors}=d;
       const group=(arr,key)=>{const m={};arr.forEach(x=>{const k=x[key]||"غير محدد";m[k]=(m[k]||0)+1;});return Object.entries(m).map(([label,value])=>({label,value}));};
-      const byCity=group(painters,"city").sort((a,b)=>b.value-a.value);
-      const byNat=group(painters,"nationality");
-      const byProjStatus=group(projects,"status").map(x=>({...x,color:STATUS_COLORS[x.label]||"#4F46E5"}));
-      const byProjType=group(projects,"type");
+      const sortTop=(arr,n=6)=>arr.sort((a,b)=>b.value-a.value).slice(0,n);
+
+      // أداء المعارض والمدن
+      const byShowroom=sortTop(group(painters,"showroom"));
+      const byCity=sortTop(group(painters,"city"));
+      // أداء المشاريع بقيمة لكل مدينة
+      const projValByCity={}; projects.forEach(p=>{const k=p.city||"غير محدد"; projValByCity[k]=(projValByCity[k]||0)+(Number(p.value)||0);});
+      const cityValue=sortTop(Object.entries(projValByCity).map(([label,value])=>({label,value})));
+      // أفضل الدهانين (مشاريع + تقييم)
+      const projByPainter={}; projects.forEach(p=>{if(p.painter)projByPainter[p.painter]=(projByPainter[p.painter]||0)+1;});
+      const topPainters=sortTop(painters.map(p=>({label:p.name,value:(projByPainter[p.name]||0)*2+(Number(p.rating)||0)})).filter(x=>x.value>0),6);
+      // أفضل المقاولين
+      const topContractors=sortTop(contractors.map(c=>({label:c.name,value:Number(c.projects_count)||0})).filter(x=>x.value>0),6);
+      // أكثر المنتجات استخداماً
+      const prodCount={}; [...visits,...projects].forEach(x=>splitProducts(x.products).forEach(n=>prodCount[n]=(prodCount[n]||0)+1));
+      const topProducts=sortTop(Object.entries(prodCount).map(([label,value])=>({label,value})),8);
+      // أكثر المنافسين ظهوراً
+      const compCount=sortTop(group(competitors,"competitor"),8).filter(x=>x.label!=="غير محدد");
+
       const recentVisits=[...visits].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,5);
       return (
         <div className="space-y-4">
@@ -292,18 +598,21 @@
             <Kpi label="مشاريع مكتسبة" value={projects.filter(p=>p.status==="تم الفوز").length} color="#0891B2"/>
             <Kpi label="المقاولون" value={contractors.length} color="#7C3AED"/>
             <Kpi label="الزيارات" value={visits.length} color="#2563EB"/>
-            <Kpi label="التدريبات" value={trainings.length} color="#0EA5E9"/>
-            <Kpi label="قيمة المشاريع" value={projects.reduce((a,p)=>a+(Number(p.value)||0),0).toLocaleString()} color="#16A34A"/>
+            <Kpi label="قيمة الفرص" value={projects.reduce((a,p)=>a+(Number(p.value)||0),0).toLocaleString()} color="#16A34A"/>
+            <Kpi label="إيراد متوقع" value={projects.reduce((a,p)=>a+(Number(p.expected_revenue)||0),0).toLocaleString()} color="#0EA5E9"/>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">الدهانون حسب المدينة</div>{byCity.length?<Bars data={byCity}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">الدهانون حسب الجنسية</div>{byNat.length?<Bars data={byNat}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">المشاريع حسب الحالة</div>{byProjStatus.length?<Bars data={byProjStatus}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">المشاريع حسب النوع</div>{byProjType.length?<Bars data={byProjType}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">أداء المعارض (دهانون لكل معرض)</div>{byShowroom.length?<Bars data={byShowroom}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">أداء المدن (دهانون لكل مدينة)</div>{byCity.length?<Bars data={byCity}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">قيمة الفرص حسب المدينة</div>{cityValue.length?<Bars data={cityValue.map(x=>({...x,color:"#D97706"}))}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">أفضل الدهانين (نشاط)</div>{topPainters.length?<Bars data={topPainters.map(x=>({...x,color:"#4F46E5"}))}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">أفضل المقاولين (عدد المشاريع)</div>{topContractors.length?<Bars data={topContractors.map(x=>({...x,color:"#0891B2"}))}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
+            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">أكثر المنتجات استخداماً</div>{topProducts.length?<Bars data={topProducts.map(x=>({...x,color:"#16A34A"}))}/>:<div className={"text-xs "+cMuted}>سجّل المنتجات في الزيارات/المشاريع لتظهر هنا</div>}</div>
           </div>
+          <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3" style={{color:"#DC2626"}}>أكثر المنافسين ظهوراً</div>{compCount.length?<Bars data={compCount.map(x=>({...x,color:"#DC2626"}))}/>:<div className={"text-xs "+cMuted}>لا سجلات رصد بعد</div>}</div>
           <div className={"rounded-2xl p-4 "+cCard}>
             <div className="text-sm font-bold mb-3">أحدث الزيارات</div>
-            <div className="space-y-2">{recentVisits.map(v=>(<div key={v.id} className={"flex items-center justify-between text-sm border-b pb-2 "+cBorder}><div className="min-w-0"><div className="font-semibold truncate">{v.target}</div><div className={"text-xs truncate "+cMuted}>{v.location} · {v.date}</div></div><Badge status={v.type}/></div>))}{recentVisits.length===0&&<div className={"text-xs "+cMuted}>لا توجد زيارات مسجّلة</div>}</div>
+            <div className="space-y-2">{recentVisits.map(v=>(<button key={v.id} onClick={()=>onGo&&onGo("visits")} className={"w-full flex items-center justify-between text-sm border-b pb-2 text-right "+cBorder}><div className="min-w-0"><div className="font-semibold truncate">{v.target}</div><div className={"text-xs truncate "+cMuted}>{v.location} · {v.date}</div></div><Badge status={v.type}/></button>))}{recentVisits.length===0&&<div className={"text-xs "+cMuted}>لا توجد زيارات مسجّلة</div>}</div>
           </div>
         </div>
       );
@@ -350,163 +659,192 @@
     }
 
     /* ===== الرؤى الذكية ===== */
-    function InsightsPage() {
+    function InsightsPage({ onGo }) {
       const [d,setD]=useState(null);
       useEffect(()=>{(async()=>{
-        const [p,pr]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*")]);
-        setD({painters:p.data||[],projects:pr.data||[]});
+        const [p,pr,v,co]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("visits").select("*"),db.from("competitors").select("*")]);
+        setD({painters:p.data||[],projects:pr.data||[],visits:v.data||[],competitors:co.data||[]});
       })()},[]);
       if(!d) return <div className={"text-center py-10 text-sm "+cMuted}>جاري تحليل البيانات...</div>;
-      const today=new Date().toISOString().slice(0,10);
-      const daysAgo=s=>s?Math.round((Date.now()-new Date(s).getTime())/86400000):9999;
-      const withF=d.painters.filter(p=>p.next_followup);
+      const today=TODAY();
+      const withF=d.painters.filter(p=>p.next_followup&&p.followup_status!=="تمت");
       const overdue=withF.filter(p=>p.next_followup<today).sort((a,b)=>a.next_followup.localeCompare(b.next_followup));
-      const upcoming=withF.filter(p=>p.next_followup>=today).sort((a,b)=>a.next_followup.localeCompare(b.next_followup)).slice(0,15);
-      const atRisk=d.projects.filter(p=>p.status==="قيد المتابعة"&&(Number(p.win_prob)||0)<50);
+      const atRisk=d.projects.filter(p=>p.status==="قيد المتابعة"&&((Number(p.win_prob)||0)<50||p.risk_level==="عالي"||p.risk_level==="حرج")).sort((a,b)=>(Number(b.value)||0)-(Number(a.value)||0));
       const competitorP=d.painters.filter(p=>p.status==="منافس");
-      const notContacted=d.painters.filter(p=>p.status!=="متوقف"&&daysAgo(p.last_visit)>45);
+      const notContacted=d.painters.filter(p=>p.status!=="متوقف"&&daysAgo(p.last_visit||p.last_contact)>45);
       const active=d.painters.filter(p=>p.status==="نشط").length;
-      const prio=p=>p.priority==="عالية"?0:p.priority==="متوسطة"?1:2;
-      const priorities=[
-        ...overdue.map(p=>({k:"متابعة متأخرة",n:p.name,extra:`${p.city||""} · موعدها ${p.next_followup}`,c:"#DC2626",rank:prio(p)})),
-        ...atRisk.slice().sort((a,b)=>(Number(b.value)||0)-(Number(a.value)||0)).map(p=>({k:"مشروع معرّض للخسارة",n:p.name,extra:`${Number(p.value||0).toLocaleString()} ر.س · ${p.win_prob||0}%`,c:"#D97706",rank:1})),
-      ].sort((a,b)=>a.rank-b.rank).slice(0,6);
-      const insights=[
-        {c:"#DC2626",t:"متابعات متأخرة",x:overdue.length?`${overdue.length} دهان فات موعد متابعتهم. ابدأ بأصحاب الأولوية العالية.`:"لا توجد متابعات متأخرة، أحسنت."},
-        {c:"#D97706",t:"دهانون بحاجة لتواصل",x:notContacted.length?`${notContacted.length} دهان لم تتم زيارتهم منذ أكثر من 45 يوماً، أبرزهم: ${notContacted.slice(0,3).map(p=>p.name).join("، ")}.`:"كل الدهانين تمت متابعتهم مؤخراً."},
-        {c:"#4F46E5",t:"مشاريع معرّضة للخسارة",x:atRisk.length?`${atRisk.length} مشاريع باحتمالية فوز أقل من 50%، أبرزها: ${atRisk.map(p=>p.name).slice(0,2).join("، ")}.`:"لا توجد مشاريع عالية الخطورة."},
-        {c:"#16A34A",t:"صحة قاعدة الدهانين",x:`${active} دهان نشط من أصل ${d.painters.length}، و${competitorP.length} مصنّفون كمنافس (فرص تحويل).`},
-      ];
+      // مشاريع عالية القيمة غير المزارة
+      const visitedProjects=new Set(d.visits.map(v=>v.project).filter(Boolean));
+      const highValueUnvisited=d.projects.filter(p=>(Number(p.value)||0)>=100000&&!visitedProjects.has(p.name)&&p.status!=="تم الفوز"&&p.status!=="تمت الخسارة").sort((a,b)=>(Number(b.value)||0)-(Number(a.value)||0));
+      // المدن الأقل نشاطاً (أقل دهانين+زيارات)
+      const cityScore={}; CITIES.forEach(c=>cityScore[c]=0);
+      d.painters.forEach(p=>{if(p.city)cityScore[p.city]=(cityScore[p.city]||0)+1;});
+      d.visits.forEach(v=>{const c=CITIES.find(x=>String(v.location||"").includes(x)); if(c)cityScore[c]=(cityScore[c]||0)+1;});
+      const leastCities=Object.entries(cityScore).map(([city,n])=>({city,n})).sort((a,b)=>a.n-b.n).slice(0,5);
+      // المنتجات الأقل استخداماً
+      const prodCount={}; PRODUCT_NAMES.forEach(n=>prodCount[n]=0);
+      [...d.visits,...d.projects].forEach(x=>splitProducts(x.products).forEach(n=>{if(n in prodCount)prodCount[n]++;}));
+      const leastProducts=Object.entries(prodCount).sort((a,b)=>a[1]-b[1]).slice(0,6);
+
       const card="rounded-2xl p-4 "+cCard;
-      const pBadge=v=>(<span className="text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{color:PRIORITY_COLORS[v]||"#64748B",background:(PRIORITY_COLORS[v]||"#64748B")+"1f"}}>{v||"بدون"}</span>);
+      const Block=({title,color,items,render,empty,go})=>(
+        <div className={card}><div className="flex items-center justify-between mb-3"><div className="text-sm font-bold" style={{color}}>{title} ({items.length})</div>{go&&<button onClick={()=>onGo&&onGo(go)} className={"text-xs font-bold "+cAccent}>عرض</button>}</div>
+          {items.length?<div className="space-y-2">{items.slice(0,8).map((x,i)=>render(x,i))}</div>:<div className={"text-xs "+cMuted}>{empty}</div>}</div>
+      );
+      const line=(a,b)=>(<div className={"flex items-center justify-between gap-2 border-b pb-2 "+cBorder}><div className="text-sm font-semibold truncate">{a}</div><div className={"text-xs truncate "+cMuted}>{b}</div></div>);
       return (
         <div className="space-y-4">
-          <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}><h2 className="font-extrabold">الرؤى والمهام</h2><p className={"text-xs mt-0.5 "+cMuted}>أولويات العمل والمتابعات مستخرجة آلياً من بياناتك</p></div>
-          <div className={card}>
-            <div className="text-sm font-bold mb-3">أولويات اليوم</div>
-            {priorities.length?<div className="space-y-2">{priorities.map((p,i)=>(<div key={i} className={"flex items-center gap-3 border-b pb-2 "+cBorder}><span className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0" style={{background:p.c}}>{i+1}</span><div className="min-w-0"><div className="text-sm font-semibold truncate">{p.n}</div><div className={"text-xs truncate "+cMuted}>{p.k} · {p.extra}</div></div></div>))}</div>:<div className={"text-xs "+cMuted}>لا توجد أولويات عاجلة اليوم.</div>}
-          </div>
+          <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}><h2 className="font-extrabold">الرؤى الذكية</h2><p className={"text-xs mt-0.5 "+cMuted}>تحليلات مستخرجة آلياً من بياناتك الفعلية لتوجيه أولويات العمل</p></div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className={card}>
-              <div className="text-sm font-bold mb-3" style={{color:"#DC2626"}}>المتابعات المتأخرة ({overdue.length})</div>
-              {overdue.length?<div className="space-y-2">{overdue.map(p=>(<div key={p.id} className={"flex items-center justify-between gap-2 border-b pb-2 "+cBorder}><div className="min-w-0"><div className="text-sm font-semibold truncate">{p.name}</div><div className={"text-xs truncate "+cMuted}>{p.city||"—"} · {p.next_followup}</div></div>{pBadge(p.priority)}</div>))}</div>:<div className={"text-xs "+cMuted}>لا يوجد متأخر.</div>}
-            </div>
-            <div className={card}>
-              <div className="text-sm font-bold mb-3" style={{color:"#16A34A"}}>المهام القادمة ({upcoming.length})</div>
-              {upcoming.length?<div className="space-y-2">{upcoming.map(p=>(<div key={p.id} className={"flex items-center justify-between gap-2 border-b pb-2 "+cBorder}><div className="min-w-0"><div className="text-sm font-semibold truncate">{p.name}</div><div className={"text-xs truncate "+cMuted}>{p.city||"—"} · {p.next_followup}</div></div>{pBadge(p.priority)}</div>))}</div>:<div className={"text-xs "+cMuted}>لا توجد مهام مجدولة. أضف "المتابعة القادمة" لأي دهان من صفحته.</div>}
-            </div>
+            <Block title="دهانون غير متابَعين" color="#DC2626" items={notContacted} go="painters" empty="كل الدهانين تمت متابعتهم مؤخراً."
+              render={(p,i)=><div key={i}>{line(p.name,`${p.city||"—"} · منذ ${daysAgo(p.last_visit||p.last_contact)} يوم`)}</div>}/>
+            <Block title="مشاريع عالية القيمة غير مزارة" color="#D97706" items={highValueUnvisited} go="projects" empty="لا توجد مشاريع كبيرة دون زيارة."
+              render={(p,i)=><div key={i}>{line(p.name,`${Number(p.value||0).toLocaleString()} ر.س`)}</div>}/>
+            <Block title="مشاريع معرّضة للخسارة" color="#4F46E5" items={atRisk} go="projects" empty="لا توجد مشاريع عالية الخطورة."
+              render={(p,i)=><div key={i}>{line(p.name,`${p.win_prob||0}% · خطر ${p.risk_level||"—"}`)}</div>}/>
+            <Block title="متابعات متأخرة" color="#DC2626" items={overdue} go="tasks" empty="لا متابعات متأخرة، أحسنت."
+              render={(p,i)=><div key={i}>{line(p.name,`موعدها ${p.next_followup}`)}</div>}/>
+            <Block title="المدن الأقل نشاطاً" color="#0891B2" items={leastCities} empty="—"
+              render={(c,i)=><div key={i}>{line(c.city,`نشاط: ${c.n}`)}</div>}/>
+            <Block title="المنتجات الأقل استخداماً" color="#7C3AED" items={leastProducts} go="products" empty="—"
+              render={(x,i)=><div key={i}>{line(x[0],`استُخدم ${x[1]} مرة`)}</div>}/>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{insights.map((ins,i)=>(<div key={i} className={card}><h4 className="font-bold text-sm mb-1.5" style={{color:ins.c}}>{ins.t}</h4><p className="text-xs leading-relaxed">{ins.x}</p></div>))}</div>
+          <div className={card}><h4 className="font-bold text-sm mb-1.5" style={{color:"#16A34A"}}>صحة قاعدة الدهانين</h4><p className="text-xs leading-relaxed">{active} دهان نشط من أصل {d.painters.length}، و{competitorP.length} مصنّفون كمنافس يمثّلون فرص تحويل.</p></div>
         </div>
       );
     }
 
-    /* ===== التقارير ===== */
+    /* ===== التقارير الاحترافية ===== */
+    function printReport(title, bodyHtml){
+      const w=window.open("","_blank");
+      const css=`*{box-sizing:border-box;font-family:'Segoe UI',Tahoma,sans-serif}body{margin:0;padding:28px;color:#0f172a;direction:rtl}
+        .h{display:flex;align-items:center;gap:12px;border-bottom:3px solid #4338CA;padding-bottom:14px;margin-bottom:18px}
+        .logo{width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,#4f46e5,#4338ca);color:#fff;font-weight:800;font-size:22px;display:flex;align-items:center;justify-content:center}
+        h1{font-size:20px;margin:0}.sub{color:#64748b;font-size:12px;margin-top:2px}
+        h2{font-size:15px;color:#4338CA;margin:22px 0 8px;border-right:4px solid #4338CA;padding-right:8px}
+        table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+        th,td{border:1px solid #e2e8f0;padding:7px 9px;text-align:right}th{background:#f1f5f9;font-weight:700}
+        .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+        .kpi{flex:1;min-width:130px;border:1px solid #e2e8f0;border-radius:10px;padding:10px}
+        .kpi .l{font-size:11px;color:#64748b}.kpi .v{font-size:18px;font-weight:800;color:#4338CA}
+        .foot{margin-top:26px;border-top:1px solid #e2e8f0;padding-top:10px;color:#94a3b8;font-size:11px;text-align:center}
+        @media print{.noprint{display:none}}`;
+      w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${title}</title><style>${css}</style></head><body>
+        <div class="h"><div class="logo">ج</div><div><h1>${title}</h1><div class="sub">نظام الجزيرة الميداني · ${new Date().toLocaleDateString("ar")}</div></div></div>
+        ${bodyHtml}
+        <div class="foot">تقرير مُنشأ آلياً من نظام الجزيرة الميداني</div>
+        <div class="noprint" style="text-align:center;margin-top:18px"><button onclick="window.print()" style="background:#4338CA;color:#fff;border:0;padding:10px 22px;border-radius:8px;font-weight:700;cursor:pointer">طباعة / حفظ PDF</button></div>
+        </body></html>`);
+      w.document.close(); setTimeout(()=>{try{w.print();}catch(e){}}, 600);
+    }
+    function tableHtml(headers, rows){
+      return `<table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${
+        rows.length?rows.map(r=>`<tr>${r.map(c=>`<td>${c==null?"—":c}</td>`).join("")}</tr>`).join(""):`<tr><td colspan="${headers.length}" style="text-align:center;color:#94a3b8">لا توجد بيانات</td></tr>`
+      }</tbody></table>`;
+    }
+    function kpisHtml(items){ return `<div class="kpis">${items.map(([l,v])=>`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("")}</div>`; }
+
     function ReportsPage() {
-      const [counts,setCounts]=useState(null);
-      useEffect(()=>{(async()=>{ const ids=Object.keys(CONFIG); const out={};
-        await Promise.all(ids.map(async id=>{ const {data}=await db.from(CONFIG[id].table).select("id"); out[id]=(data||[]).length; })); setCounts(out);
+      const [data,setData]=useState(null);
+      useEffect(()=>{(async()=>{
+        const [p,pr,c,v,t,co]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*"),db.from("competitors").select("*")]);
+        setData({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[],competitors:co.data||[]});
       })()},[]);
-      async function dl(id){ const {data}=await db.from(CONFIG[id].table).select("*"); exportCSV(CONFIG[id],data||[]); }
+      const cut=days=>{ const dt=new Date(); dt.setDate(dt.getDate()-days); return dt.toISOString().slice(0,10); };
+
+      function periodReport(label,days){ if(!data)return; const since=cut(days);
+        const v=data.visits.filter(x=>String(x.date||"")>=since);
+        const pr=data.projects.filter(x=>String(x.created_at||"").slice(0,10)>=since);
+        const won=data.projects.filter(x=>x.status==="تم الفوز");
+        let body=kpisHtml([["زيارات الفترة",v.length],["مشاريع جديدة",pr.length],["إجمالي المشاريع",data.projects.length],["قيمة الفرص",data.projects.reduce((a,x)=>a+(Number(x.value)||0),0).toLocaleString()+" ر.س"]]);
+        body+="<h2>زيارات الفترة</h2>"+tableHtml(["الجهة","النوع","التاريخ","الموقع","النتيجة"],v.map(x=>[x.target,x.type,x.date,x.location,x.results]));
+        body+="<h2>مشاريع جديدة في الفترة</h2>"+tableHtml(["المشروع","المدينة","الحالة","القيمة"],pr.map(x=>[x.name,x.city,x.status,(Number(x.value)||0).toLocaleString()]));
+        printReport(label, body);
+      }
+      function paintersReport(){ if(!data)return;
+        const projByPainter={}; data.projects.forEach(p=>{if(p.painter)projByPainter[p.painter]=(projByPainter[p.painter]||0)+1;});
+        const visByPainter={}; data.visits.forEach(v=>{const k=v.painter||v.target; if(k)visByPainter[k]=(visByPainter[k]||0)+1;});
+        const rows=data.painters.map(p=>[p.name,p.city,p.status,projByPainter[p.name]||0,visByPainter[p.name]||0,p.rating||0,p.last_visit||p.last_contact||"—"]);
+        let body=kpisHtml([["الدهانون",data.painters.length],["النشطون",data.painters.filter(p=>p.status==="نشط").length],["منافسون",data.painters.filter(p=>p.status==="منافس").length]]);
+        body+="<h2>نشاط الدهانين</h2>"+tableHtml(["الاسم","المدينة","الحالة","المشاريع","الزيارات","التقييم","آخر تواصل"],rows);
+        printReport("تقرير نشاط الدهانين", body);
+      }
+      function projectsReport(){ if(!data)return;
+        const rows=data.projects.map(p=>[p.name,p.type,p.city,p.status,p.priority||"—",p.risk_level||"—",(Number(p.value)||0).toLocaleString(),(p.win_prob||0)+"%"]);
+        let body=kpisHtml([["المشاريع",data.projects.length],["تم الفوز",data.projects.filter(p=>p.status==="تم الفوز").length],["قيمة الفرص",data.projects.reduce((a,p)=>a+(Number(p.value)||0),0).toLocaleString()+" ر.س"],["إيراد متوقع",data.projects.reduce((a,p)=>a+(Number(p.expected_revenue)||0),0).toLocaleString()+" ر.س"]]);
+        body+="<h2>تفاصيل المشاريع</h2>"+tableHtml(["المشروع","النوع","المدينة","الحالة","الأولوية","الخطر","القيمة","الفوز"],rows);
+        printReport("تقرير المشاريع", body);
+      }
+      function competitorsReport(){ if(!data)return;
+        const rows=data.competitors.map(c=>[c.competitor,c.product,c.price,c.strengths,c.weaknesses,c.project]);
+        let body=kpisHtml([["سجلات الرصد",data.competitors.length],["منافسون",new Set(data.competitors.map(c=>c.competitor)).size]]);
+        body+="<h2>رصد المنافسين</h2>"+tableHtml(["المنافس","المنتج","السعر","نقاط القوة","نقاط الضعف","المشروع"],rows);
+        printReport("تقرير المنافسين", body);
+      }
+
+      async function dl(id){ const {data:d}=await db.from(CONFIG[id].table).select("*"); exportCSV(CONFIG[id],d||[]); }
+      const counts=data?Object.fromEntries(Object.keys(CONFIG).map(id=>[id,(data[CONFIG[id].table]||[]).length])):null;
+      const repBtn="flex items-center justify-center gap-1.5 rounded-xl px-3 py-3 text-xs font-bold "+cTrack+" "+cAccent+" "+cHover;
+
       return (
         <div className="space-y-4">
           <div className={"rounded-2xl p-5 "+cCard}>
-            <div className="flex items-center gap-3 pb-3 mb-4 border-b border-gray-200 dark:border-slate-800"><div className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-extrabold" style={{background:"linear-gradient(135deg,#4f46e5,#4338ca)"}}>ج</div><div><h2 className="font-extrabold">تقرير ملخّص النظام</h2><p className={"text-xs "+cMuted}>{new Date().toLocaleDateString("ar")}</p></div></div>
+            <div className="flex items-center gap-3 pb-3 mb-4 border-b border-gray-200 dark:border-slate-800"><div className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-extrabold" style={{background:"linear-gradient(135deg,#4f46e5,#4338ca)"}}>ج</div><div><h2 className="font-extrabold">مركز التقارير</h2><p className={"text-xs "+cMuted}>{new Date().toLocaleDateString("ar")}</p></div></div>
             {!counts?<div className={"text-sm "+cMuted}>جاري التحضير...</div>:(
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{Object.keys(CONFIG).map(id=>(<div key={id} className={"rounded-xl p-3 "+cTrack}><div className={"text-xs "+cMuted}>{CONFIG[id].title}</div><div className={"text-xl font-extrabold "+cAccent}>{counts[id]??"—"}</div></div>))}</div>
             )}
           </div>
+
           <div className={"rounded-2xl p-4 "+cCard}>
-            <h3 className="font-bold text-sm mb-3">تصدير البيانات (Excel)</h3>
+            <div className="flex items-center gap-2 mb-3"><Icon n="printer" s={16} c={cAccent}/><h3 className="font-bold text-sm">تقارير احترافية جاهزة للطباعة (PDF)</h3></div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <button onClick={()=>periodReport("التقرير الأسبوعي",7)} className={repBtn}><Icon n="clock" s={14}/> تقرير أسبوعي</button>
+              <button onClick={()=>periodReport("التقرير الشهري",30)} className={repBtn}><Icon n="clock" s={14}/> تقرير شهري</button>
+              <button onClick={paintersReport} className={repBtn}>نشاط الدهانين</button>
+              <button onClick={projectsReport} className={repBtn}>تقرير المشاريع</button>
+              <button onClick={competitorsReport} className={repBtn}>تقرير المنافسين</button>
+            </div>
+            <p className={"text-xs mt-3 "+cMuted}>يفتح التقرير في نافذة جديدة منسّقة، استخدم "طباعة / حفظ PDF" لحفظه.</p>
+          </div>
+
+          <div className={"rounded-2xl p-4 "+cCard}>
+            <h3 className="font-bold text-sm mb-3">تصدير البيانات (Excel/CSV)</h3>
             <div className="flex flex-wrap gap-2">{Object.keys(CONFIG).map(id=>(<button key={id} onClick={()=>dl(id)} className={"px-3 py-2 rounded-lg text-xs font-bold "+cAccent+" "+cTrack+" "+cHover}>{CONFIG[id].title}</button>))}</div>
           </div>
         </div>
       );
     }
 
-    /* ===== إحصائية المنافسين في منطقة جازان (الربع الأول 2026) ===== */
-    const MARKET_BRANDS = [
-      {name:"دهانات الجزيرة", total:16, own:true},
-      {name:"جوتن", total:15},
-      {name:"اوسكار", total:13},
-      {name:"همبل", total:8},
-      {name:"الشبح", total:8},
-      {name:"اسكادا", total:6},
-      {name:"تكنو", total:5},
-      {name:"تايم", total:4},
-      {name:"روز", total:3},
-      {name:"العالمية", total:3},
-      {name:"دايروب", total:2},
-      {name:"المملكة", total:2},
-      {name:"اليكوم", total:2},
-      {name:"سايت", total:2},
-      {name:"سيجما", total:2},
-      {name:"سايبس", total:2},
-      {name:"ارت", total:2},
-      {name:"بينتكو", total:2},
-      {name:"مركز الجزيرة", total:2, own:true},
-      {name:"ناشونال", total:1},
-      {name:"شيروين ويليامز", total:1},
-      {name:"دهانات تجارية أخرى", total:24, other:true},
-    ];
-    const MARKET_JAZEERA_CITY = [
-      {city:"جيزان", n:4},{city:"صبيا", n:2},{city:"أبو عريش", n:2},{city:"صامطة", n:2},
-      {city:"بيش", n:1},{city:"ضمد", n:1},{city:"العارضة", n:1},{city:"العيدابي", n:1},
-      {city:"الداير", n:1},{city:"أحد المسارحة", n:1},
-    ];
-
-    function CompetitorStats() {
-      const comp = MARKET_BRANDS.filter(b=>!b.own && !b.other);
-      const compActive = comp.filter(b=>b.total>0);
-      const top = comp[0];
-      const totalComp = comp.reduce((a,b)=>a+b.total,0);
-      const chart = MARKET_BRANDS.filter(b=>b.total>0 && !b.other).map(b=>({label:b.name, value:b.total, color:b.own?"#4F46E5":"#DC2626"}));
-      return (
-        <div className="space-y-4 mb-4">
-          <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}>
-            <h2 className="font-extrabold">إحصائية المنافسين — منطقة جازان</h2>
-            <p className={"text-xs mt-0.5 "+cMuted}>توزيع فروع العلامات في مدن المنطقة · بيانات الربع الأول 2026</p>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Kpi label="معارض الجزيرة" value={16} color="#4F46E5"/>
-            <Kpi label="أقوى منافس" value={top.name+" — "+top.total} color="#DC2626"/>
-            <Kpi label="العلامات المنافسة" value={compActive.length} color="#D97706"/>
-            <Kpi label="إجمالي فروع المنافسين" value={totalComp} color="#0891B2"/>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">فروع العلامات في المنطقة (الجزيرة باللون النيلي)</div><Bars data={chart}/></div>
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">معارض الجزيرة حسب المدينة</div><Bars data={MARKET_JAZEERA_CITY.map(c=>({label:c.city,value:c.n,color:"#4F46E5"}))}/></div>
-          </div>
-          <div className={"rounded-2xl p-3 text-xs "+cCard+" "+cMuted}>ملاحظة: تشمل "دهانات تجارية أخرى" 24 فرعاً لعلامات متفرقة، ولم تُدرج في الرسم لتركيزه على العلامات الرئيسية.</div>
-        </div>
-      );
-    }
-
     /* ===== التطبيق ===== */
-    const NAV=[["dashboard","اللوحة الرئيسية"],["painters","الدهانون"],["projects","المشاريع"],["contractors","المقاولون"],["visits","الزيارات"],["trainings","التدريبات"],["competitors","المنافسون"],["products","المنتجات"],["insights","رؤى ذكية"],["reports","التقارير"]];
+    const NAV=[["dashboard","اللوحة الرئيسية"],["tasks","مهامي اليوم"],["painters","الدهانون"],["projects","المشاريع"],["contractors","المقاولون"],["visits","الزيارات"],["trainings","التدريبات"],["competitors","المنافسون"],["products","المنتجات"],["insights","رؤى ذكية"],["timeline","سجل النشاط"],["reports","التقارير"]];
     const TITLES=Object.fromEntries(NAV);
 
     function App() {
       const [tab,setTab]=useState("dashboard"); const [dark,setDark]=useState(false);
       const [sideOpen,setSideOpen]=useState(false); const [notifOpen,setNotifOpen]=useState(false);
       const [gq,setGq]=useState(""); const [results,setResults]=useState([]); const [notifs,setNotifs]=useState([]);
+      const [quickOpen,setQuickOpen]=useState(false); const [prefill,setPrefill]=useState(null);
 
       useEffect(()=>{ document.documentElement.classList.toggle("dark",dark); },[dark]);
-      useEffect(()=>{(async()=>{
-        const [pr,t]=await Promise.all([db.from("projects").select("*"),db.from("trainings").select("*")]);
+      async function loadNotifs(){
+        const today=TODAY();
+        const [pr,t,p,c]=await Promise.all([db.from("projects").select("*"),db.from("trainings").select("*"),db.from("painters").select("*"),db.from("contractors").select("*")]);
         const list=[];
-        (pr.data||[]).filter(p=>p.status==="قيد المتابعة"&&(Number(p.win_prob)||0)<50).forEach(p=>list.push({level:"high",title:"مشروع معرّض للخسارة",text:`${p.name} — احتمالية ${p.win_prob||0}%`}));
-        const today=new Date().toISOString().slice(0,10);
+        (pr.data||[]).filter(x=>x.status==="قيد المتابعة"&&((Number(x.win_prob)||0)<50||x.risk_level==="عالي"||x.risk_level==="حرج")).forEach(x=>list.push({level:"high",title:"مشروع معرّض للخسارة",text:`${x.name} — احتمالية ${x.win_prob||0}%`}));
+        const allF=[...(p.data||[]),...(pr.data||[]),...(c.data||[])].filter(x=>x.next_followup&&x.next_followup<today&&x.followup_status!=="تمت"&&x.followup_status!=="ملغاة");
+        allF.forEach(x=>list.push({level:"high",title:"متابعة متأخرة",text:`${x.name} — كان موعدها ${x.next_followup}`}));
         (t.data||[]).filter(x=>x.date&&x.date>=today).forEach(x=>list.push({level:"mid",title:"تدريب قادم",text:`${x.name} — ${x.date}`}));
         setNotifs(list);
-      })()},[]);
+      }
+      useEffect(()=>{ loadNotifs(); },[]);
       useEffect(()=>{ if(gq.trim().length<2){setResults([]);return;} const tm=setTimeout(async()=>{
         const [p,pr,c]=await Promise.all([db.from("painters").select("id,name").ilike("name","%"+gq+"%").limit(5),db.from("projects").select("id,name").ilike("name","%"+gq+"%").limit(5),db.from("contractors").select("id,name").ilike("name","%"+gq+"%").limit(5)]);
         const r=[]; (p.data||[]).forEach(x=>r.push({t:"دهان",n:x.name,go:"painters"})); (pr.data||[]).forEach(x=>r.push({t:"مشروع",n:x.name,go:"projects"})); (c.data||[]).forEach(x=>r.push({t:"مقاول",n:x.name,go:"contractors"})); setResults(r);
       },300); return ()=>clearTimeout(tm); },[gq]);
 
-      const go=id=>{ setTab(id); setSideOpen(false); setNotifOpen(false); setGq(""); setResults([]); window.scrollTo(0,0); };
+      const go=(id,pre)=>{ setTab(id); setSideOpen(false); setNotifOpen(false); setGq(""); setResults([]); if(pre)setPrefill({tab:id,data:pre}); window.scrollTo(0,0); };
       const highCount=notifs.filter(n=>n.level==="high").length;
+      const prefillFor=t=> (prefill&&prefill.tab===t)?prefill.data:null;
 
       return (
         <div className="min-h-screen bg-gray-50 dark:bg-slate-950 text-gray-800 dark:text-slate-100">
@@ -518,7 +856,7 @@
             <nav className="flex-1 overflow-y-auto p-3 space-y-1">
               {NAV.map(([k,label])=>(<button key={k} onClick={()=>go(k)} className={"w-full flex items-center px-3 py-2.5 rounded-xl text-sm font-semibold transition text-right "+(tab===k?"bg-indigo-600 text-white shadow-sm":cMuted+" "+cHover)}>{label}</button>))}
             </nav>
-            <div className={"p-4 border-t text-xs "+cBorder+" "+cMuted}>المستخدم: أبو فيصل</div>
+            <div className={"p-4 border-t text-xs "+cBorder+" "+cMuted}>المستخدم: {CURRENT_USER}</div>
           </aside>
           {sideOpen&&<div className="fixed inset-0 bg-black/40 z-30 lg:hidden" onClick={()=>setSideOpen(false)}/>}
 
@@ -531,6 +869,7 @@
                 {results.length>0&&(<div className={"absolute top-full mt-1 w-full rounded-xl shadow-xl overflow-hidden z-30 text-gray-800 dark:text-slate-100 "+cCard}>{results.map((r,i)=>(<button key={i} onClick={()=>go(r.go)} className={"w-full flex items-center justify-between px-3 py-2.5 text-xs text-right "+cHover}><span className="font-bold">{r.n}</span><Badge status={r.t}/></button>))}</div>)}
               </div>
               <div className="mr-auto flex items-center gap-1">
+                <button onClick={()=>setQuickOpen(true)} title="زيارة سريعة" className="p-2 rounded-xl bg-white/10 hover:bg-white/20"><Icon n="bolt"/></button>
                 <div className="relative">
                   <button onClick={()=>setNotifOpen(!notifOpen)} className="p-2 rounded-xl hover:bg-white/10 relative"><Icon n="bell"/>{highCount>0&&<span className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{highCount}</span>}</button>
                   {notifOpen&&(<div className={"absolute top-full left-0 mt-1 w-72 rounded-2xl shadow-xl overflow-hidden z-30 text-gray-800 dark:text-slate-100 "+cCard}><div className={"p-3 font-bold text-xs border-b "+cBorder}>الإشعارات الذكية</div><div className="max-h-72 overflow-y-auto">{notifs.length===0?<div className={"p-3 text-xs "+cMuted}>لا توجد تنبيهات</div>:notifs.map((n,i)=>(<div key={i} className={"p-3 border-b flex gap-2 "+cBorder}><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{background:n.level==="high"?"#DC2626":"#D97706"}}/><div><div className="text-xs font-bold">{n.title}</div><div className={"text-xs "+cMuted}>{n.text}</div></div></div>))}</div></div>)}
@@ -539,14 +878,18 @@
               </div>
             </header>
             <main className="p-4 max-w-5xl mx-auto">
-              {tab==="dashboard"&&<Dashboard key="dash"/>}
+              {tab==="dashboard"&&<Dashboard key="dash" onGo={go}/>}
+              {tab==="tasks"&&<TasksToday key="tasks" onGo={go}/>}
               {tab==="products"&&<ProductsPage/>}
-              {tab==="insights"&&<InsightsPage key="ins"/>}
+              {tab==="insights"&&<InsightsPage key="ins" onGo={go}/>}
+              {tab==="timeline"&&<Timeline key="tl"/>}
               {tab==="reports"&&<ReportsPage key="rep"/>}
-              {CONFIG[tab]&&<Section key={tab} cfg={CONFIG[tab]}/>}
+              {CONFIG[tab]&&<Section key={tab} cfg={CONFIG[tab]} onGo={go} prefill={prefillFor(tab)} clearPrefill={()=>setPrefill(null)}/>}
               <div className={"text-center text-xs py-4 "+cMuted}>نظام الجزيرة الميداني — مربوط بقاعدة بيانات Supabase</div>
             </main>
           </div>
+
+          <QuickVisit open={quickOpen} onClose={()=>setQuickOpen(false)} onSaved={()=>{ loadNotifs(); if(tab==="visits")go("visits"); }}/>
         </div>
       );
     }
