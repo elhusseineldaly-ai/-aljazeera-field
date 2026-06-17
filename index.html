@@ -26,7 +26,12 @@
     const SUPABASE_KEY = "sb_publishable_6bwC9B-Q20VG09Bq6bUXow_6xq3qdGh";
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     const STORAGE_BUCKET = "media";
-    const CURRENT_USER = "أبو فيصل";
+
+    /* ===== نظام الجلسة وتسجيل الدخول ===== */
+    const SESSION_KEY = "jazeera_session";
+    let SESSION = (()=>{ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)||"null"); }catch(e){ return null; } })();
+    function setSession(s){ SESSION = s; try{ s ? localStorage.setItem(SESSION_KEY, JSON.stringify(s)) : localStorage.removeItem(SESSION_KEY); }catch(e){} }
+    function currentUserName(){ return (SESSION && (SESSION.name || SESSION.username)) || "—"; }
 
     /* ===== ثوابت التصميم ===== */
     const cCard = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 shadow-sm";
@@ -126,7 +131,7 @@
     const splitProducts = v=>String(v||"").split(",").map(s=>s.trim()).filter(Boolean);
 
     async function logActivity(action, table, label, name){
-      try{ await db.from("activity_log").insert([{ action, entity:table, entity_label:label, record_name:name||"", user_name:CURRENT_USER }]); }
+      try{ await db.from("activity_log").insert([{ action, entity:table, entity_label:label, record_name:name||"", user_name:currentUserName() }]); }
       catch(e){ /* الجدول قد لا يكون منشأ بعد */ }
     }
     function getGeo(){
@@ -946,7 +951,10 @@
             <nav className="flex-1 overflow-y-auto p-3 space-y-1">
               {NAV.map(([k,label])=>(<button key={k} onClick={()=>go(k)} className={"w-full flex items-center px-3 py-2.5 rounded-xl text-sm font-semibold transition text-right "+(tab===k?"bg-indigo-600 text-white shadow-sm":cMuted+" "+cHover)}>{label}</button>))}
             </nav>
-            <div className={"p-4 border-t text-xs "+cBorder+" "+cMuted}>المستخدم: {CURRENT_USER}</div>
+            <div className={"p-4 border-t "+cBorder}>
+              <div className={"text-xs mb-2 "+cMuted}>المستخدم: <span className="font-bold">{currentUserName()}</span></div>
+              <button onClick={()=>{ if(confirm("تسجيل الخروج من النظام؟")){ setSession(null); window.location.reload(); } }} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-900/20 transition"><Icon n="close" s={14}/> تسجيل الخروج</button>
+            </div>
           </aside>
           {sideOpen&&<div className="fixed inset-0 bg-black/40 z-30 lg:hidden" onClick={()=>setSideOpen(false)}/>}
 
@@ -984,7 +992,66 @@
       );
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+    /* ===== شاشة تسجيل الدخول ===== */
+    function Login({ onSuccess }){
+      const [username,setUsername]=useState(""); const [password,setPassword]=useState("");
+      const [show,setShow]=useState(false); const [busy,setBusy]=useState(false); const [err,setErr]=useState("");
+
+      async function submit(e){
+        if(e) e.preventDefault();
+        const u=username.trim();
+        if(!u || !password){ setErr("اكتب اسم المستخدم وكلمة المرور"); return; }
+        setBusy(true); setErr("");
+        try{
+          const { data, error } = await db.rpc("app_login", { p_username: u, p_password: password });
+          if(error){ setErr("تعذّر الاتصال: "+error.message); setBusy(false); return; }
+          const row = Array.isArray(data) ? data[0] : data;
+          if(!row || !row.id){ setErr("اسم المستخدم أو كلمة المرور غير صحيحة"); setBusy(false); return; }
+          const s={ id:row.id, username:row.username, name:row.name||row.username };
+          setSession(s); onSuccess(s);
+        }catch(ex){ setErr("حدث خطأ غير متوقع. حاول مرة أخرى."); setBusy(false); }
+      }
+
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50 dark:bg-slate-950" style={{background:"linear-gradient(135deg,#312e81,#1e1b4b 60%,#0f172a)"}}>
+          <div className="w-full max-w-sm">
+            <div className="flex flex-col items-center mb-6">
+              <div className="w-16 h-16 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center text-white font-extrabold text-3xl mb-3">ج</div>
+              <div className="text-white font-extrabold text-lg">نظام الجزيرة الميداني</div>
+              <div className="text-indigo-200 text-xs mt-1">Jazeera Field System</div>
+            </div>
+            <form onSubmit={submit} className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-6 space-y-4">
+              <div className="text-center font-extrabold text-gray-800 dark:text-slate-100">تسجيل الدخول</div>
+              <div>
+                <label className={"block text-xs font-bold mb-1.5 "+cMuted}>اسم المستخدم</label>
+                <input value={username} onChange={e=>setUsername(e.target.value)} autoFocus autoComplete="username"
+                  className={"w-full rounded-xl px-3 py-2.5 text-sm outline-none "+cInput} placeholder="اكتب اسم المستخدم"/>
+              </div>
+              <div>
+                <label className={"block text-xs font-bold mb-1.5 "+cMuted}>كلمة المرور</label>
+                <div className="relative">
+                  <input value={password} onChange={e=>setPassword(e.target.value)} type={show?"text":"password"} autoComplete="current-password"
+                    className={"w-full rounded-xl px-3 py-2.5 text-sm outline-none "+cInput} placeholder="••••••••"/>
+                  <button type="button" onClick={()=>setShow(!show)} className={"absolute left-2 top-1/2 -translate-y-1/2 text-xs font-bold "+cAccent}>{show?"إخفاء":"إظهار"}</button>
+                </div>
+              </div>
+              {err&&<div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-xl px-3 py-2 text-center font-bold">{err}</div>}
+              <button type="submit" disabled={busy} className={"w-full rounded-xl py-2.5 text-sm font-bold transition disabled:opacity-60 "+cBtn}>{busy?"جارٍ التحقق...":"دخول"}</button>
+            </form>
+            <div className="text-center text-indigo-200/70 text-xs mt-4">للحصول على حساب تواصل مع مسؤول النظام</div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ===== الجذر: يقرر عرض الدخول أو التطبيق ===== */
+    function Root(){
+      const [authed,setAuthed]=useState(!!(SESSION && SESSION.id));
+      if(!authed) return <Login onSuccess={()=>setAuthed(true)}/>;
+      return <App/>;
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<Root/>);
   </script>
 </body>
 </html>
