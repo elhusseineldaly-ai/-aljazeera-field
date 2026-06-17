@@ -46,6 +46,8 @@
     const SHOWROOMS_OPTS = ["معرض مخطط 5","معرض مدينة البناء","معرض المطار","معرض المطلع","معرض صبيا 1","معرض صبيا 2","معرض بيش","معرض أبو عريش 1","معرض أبو عريش 2","معرض ضمد","معرض العارضة","معرض العيدابي","معرض الداير","معرض أحد المسارحة","معرض صامطة 1","معرض صامطة 2"];
     const WORK_TYPES = ["فردي","مؤسسة"];
     const PAINTER_STATUSES = ["نشط","مستقطب","متوقف","منافس"];
+    const PRIORITIES = ["بدون","عالية","متوسطة","منخفضة"];
+    const PRIORITY_COLORS = { "عالية":"#DC2626","متوسطة":"#D97706","منخفضة":"#16A34A","بدون":"#94A3B8" };
     const PROJECT_TYPES = ["فيلا","عمارة","مدرسة","مستشفى","مجمع تجاري","فندق","مبنى حكومي","استراحة"];
     const PROJECT_STATUSES = ["فرصة","قيد المتابعة","تم الفوز","تمت الخسارة","مؤجل"];
     const VISIT_TYPES = ["دهان","مشروع","معرض","مقاول","استشاري","منافس"];
@@ -79,8 +81,8 @@
 
     /* ===== إعدادات الأقسام ===== */
     const CONFIG = {
-      painters: { table:"painters", title:"الدهانون", statusField:"status", filterKeys:["city","showroom","nationality","status","rating"],
-        fields:[ {key:"name",label:"الاسم",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"nationality",label:"الجنسية",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"showroom",label:"المعرض الموجَّه إليه",type:"select",opts:SHOWROOMS_OPTS},{key:"work_type",label:"نوع العمل",type:"select",opts:WORK_TYPES},{key:"status",label:"الحالة",type:"select",opts:PAINTER_STATUSES},{key:"rating",label:"التقييم",type:"number"},{key:"last_visit",label:"آخر زيارة",type:"date"},{key:"notes",label:"ملاحظات",type:"text"} ],
+      painters: { table:"painters", title:"الدهانون", statusField:"status", filterKeys:["city","showroom","nationality","status","priority","rating"],
+        fields:[ {key:"name",label:"الاسم",type:"text"},{key:"phone",label:"رقم الجوال",type:"text"},{key:"nationality",label:"الجنسية",type:"text"},{key:"city",label:"المدينة",type:"select",opts:CITIES},{key:"showroom",label:"المعرض الموجَّه إليه",type:"select",opts:SHOWROOMS_OPTS},{key:"work_type",label:"نوع العمل",type:"select",opts:WORK_TYPES},{key:"status",label:"الحالة",type:"select",opts:PAINTER_STATUSES},{key:"rating",label:"التقييم",type:"number"},{key:"priority",label:"أولوية المتابعة",type:"select",opts:PRIORITIES},{key:"next_followup",label:"المتابعة القادمة",type:"date"},{key:"last_visit",label:"آخر زيارة",type:"date"},{key:"notes",label:"ملاحظات",type:"text"} ],
         subtitle:r=>`${r.nationality||"—"} · ${r.city||"—"} · ${r.showroom||"بدون معرض"}`,
         kpis:rows=>[["إجمالي الدهانين",rows.length,"#4F46E5"],["النشطون",rows.filter(r=>r.status==="نشط").length,"#16A34A"],["تقييم 4 فأعلى",rows.filter(r=>(Number(r.rating)||0)>=4).length,"#D97706"]], addLabel:"إضافة دهان" },
       projects: { table:"projects", title:"المشاريع", statusField:"status", filterKeys:["city","status","type"],
@@ -351,23 +353,50 @@
     function InsightsPage() {
       const [d,setD]=useState(null);
       useEffect(()=>{(async()=>{
-        const [p,pr,cm]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("competitors").select("*")]);
-        setD({painters:p.data||[],projects:pr.data||[],competitors:cm.data||[]});
+        const [p,pr]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*")]);
+        setD({painters:p.data||[],projects:pr.data||[]});
       })()},[]);
       if(!d) return <div className={"text-center py-10 text-sm "+cMuted}>جاري تحليل البيانات...</div>;
+      const today=new Date().toISOString().slice(0,10);
+      const daysAgo=s=>s?Math.round((Date.now()-new Date(s).getTime())/86400000):9999;
+      const withF=d.painters.filter(p=>p.next_followup);
+      const overdue=withF.filter(p=>p.next_followup<today).sort((a,b)=>a.next_followup.localeCompare(b.next_followup));
+      const upcoming=withF.filter(p=>p.next_followup>=today).sort((a,b)=>a.next_followup.localeCompare(b.next_followup)).slice(0,15);
       const atRisk=d.projects.filter(p=>p.status==="قيد المتابعة"&&(Number(p.win_prob)||0)<50);
       const competitorP=d.painters.filter(p=>p.status==="منافس");
+      const notContacted=d.painters.filter(p=>p.status!=="متوقف"&&daysAgo(p.last_visit)>45);
       const active=d.painters.filter(p=>p.status==="نشط").length;
+      const prio=p=>p.priority==="عالية"?0:p.priority==="متوسطة"?1:2;
+      const priorities=[
+        ...overdue.map(p=>({k:"متابعة متأخرة",n:p.name,extra:`${p.city||""} · موعدها ${p.next_followup}`,c:"#DC2626",rank:prio(p)})),
+        ...atRisk.slice().sort((a,b)=>(Number(b.value)||0)-(Number(a.value)||0)).map(p=>({k:"مشروع معرّض للخسارة",n:p.name,extra:`${Number(p.value||0).toLocaleString()} ر.س · ${p.win_prob||0}%`,c:"#D97706",rank:1})),
+      ].sort((a,b)=>a.rank-b.rank).slice(0,6);
       const insights=[
-        {c:"#DC2626",t:"مشاريع معرّضة للخسارة",x:atRisk.length?`${atRisk.length} مشاريع باحتمالية فوز أقل من 50%، أبرزها: ${atRisk.map(p=>p.name).slice(0,2).join("، ")}. التوصية: تصعيد الدعم الفني وتقديم عروض الكميات.`:"لا توجد مشاريع عالية الخطورة حالياً، وضع ممتاز."},
-        {c:"#D97706",t:"دهانون يستخدمون المنافسين",x:competitorP.length?`${competitorP.length} دهانين مصنّفين كـ "منافس": ${competitorP.map(p=>p.name).slice(0,3).join("، ")}. زيارات أسبوعية وعينات مجانية ترفع فرص تحويلهم.`:"لا يوجد دهانون مصنّفون كمنافسين حالياً."},
-        {c:"#4F46E5",t:"رصد المنافسين",x:d.competitors.length?`لديك ${d.competitors.length} سجلات رصد لـ ${new Set(d.competitors.map(c=>c.competitor)).size} منافسين. استثمر نقاط ضعفهم في العروض المقارنة أمام الاستشاريين.`:"لم تُسجَّل بيانات رصد للمنافسين بعد."},
-        {c:"#16A34A",t:"صحة قاعدة الدهانين",x:`لديك ${active} دهان نشط من أصل ${d.painters.length}. حافظ على الزخم بزيارات دورية للنشطين عاليي التقييم.`},
+        {c:"#DC2626",t:"متابعات متأخرة",x:overdue.length?`${overdue.length} دهان فات موعد متابعتهم. ابدأ بأصحاب الأولوية العالية.`:"لا توجد متابعات متأخرة، أحسنت."},
+        {c:"#D97706",t:"دهانون بحاجة لتواصل",x:notContacted.length?`${notContacted.length} دهان لم تتم زيارتهم منذ أكثر من 45 يوماً، أبرزهم: ${notContacted.slice(0,3).map(p=>p.name).join("، ")}.`:"كل الدهانين تمت متابعتهم مؤخراً."},
+        {c:"#4F46E5",t:"مشاريع معرّضة للخسارة",x:atRisk.length?`${atRisk.length} مشاريع باحتمالية فوز أقل من 50%، أبرزها: ${atRisk.map(p=>p.name).slice(0,2).join("، ")}.`:"لا توجد مشاريع عالية الخطورة."},
+        {c:"#16A34A",t:"صحة قاعدة الدهانين",x:`${active} دهان نشط من أصل ${d.painters.length}، و${competitorP.length} مصنّفون كمنافس (فرص تحويل).`},
       ];
+      const card="rounded-2xl p-4 "+cCard;
+      const pBadge=v=>(<span className="text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{color:PRIORITY_COLORS[v]||"#64748B",background:(PRIORITY_COLORS[v]||"#64748B")+"1f"}}>{v||"بدون"}</span>);
       return (
         <div className="space-y-4">
-          <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}><h2 className="font-extrabold">رؤى ذكية</h2><p className={"text-xs mt-0.5 "+cMuted}>توصيات مولّدة آلياً من تحليل بياناتك الحيّة</p></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{insights.map((ins,i)=>(<div key={i} className={"rounded-2xl p-4 "+cCard}><h4 className="font-bold text-sm mb-1.5" style={{color:ins.c}}>{ins.t}</h4><p className="text-xs leading-relaxed">{ins.x}</p></div>))}</div>
+          <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}><h2 className="font-extrabold">الرؤى والمهام</h2><p className={"text-xs mt-0.5 "+cMuted}>أولويات العمل والمتابعات مستخرجة آلياً من بياناتك</p></div>
+          <div className={card}>
+            <div className="text-sm font-bold mb-3">أولويات اليوم</div>
+            {priorities.length?<div className="space-y-2">{priorities.map((p,i)=>(<div key={i} className={"flex items-center gap-3 border-b pb-2 "+cBorder}><span className="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0" style={{background:p.c}}>{i+1}</span><div className="min-w-0"><div className="text-sm font-semibold truncate">{p.n}</div><div className={"text-xs truncate "+cMuted}>{p.k} · {p.extra}</div></div></div>))}</div>:<div className={"text-xs "+cMuted}>لا توجد أولويات عاجلة اليوم.</div>}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className={card}>
+              <div className="text-sm font-bold mb-3" style={{color:"#DC2626"}}>المتابعات المتأخرة ({overdue.length})</div>
+              {overdue.length?<div className="space-y-2">{overdue.map(p=>(<div key={p.id} className={"flex items-center justify-between gap-2 border-b pb-2 "+cBorder}><div className="min-w-0"><div className="text-sm font-semibold truncate">{p.name}</div><div className={"text-xs truncate "+cMuted}>{p.city||"—"} · {p.next_followup}</div></div>{pBadge(p.priority)}</div>))}</div>:<div className={"text-xs "+cMuted}>لا يوجد متأخر.</div>}
+            </div>
+            <div className={card}>
+              <div className="text-sm font-bold mb-3" style={{color:"#16A34A"}}>المهام القادمة ({upcoming.length})</div>
+              {upcoming.length?<div className="space-y-2">{upcoming.map(p=>(<div key={p.id} className={"flex items-center justify-between gap-2 border-b pb-2 "+cBorder}><div className="min-w-0"><div className="text-sm font-semibold truncate">{p.name}</div><div className={"text-xs truncate "+cMuted}>{p.city||"—"} · {p.next_followup}</div></div>{pBadge(p.priority)}</div>))}</div>:<div className={"text-xs "+cMuted}>لا توجد مهام مجدولة. أضف "المتابعة القادمة" لأي دهان من صفحته.</div>}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{insights.map((ins,i)=>(<div key={i} className={card}><h4 className="font-bold text-sm mb-1.5" style={{color:ins.c}}>{ins.t}</h4><p className="text-xs leading-relaxed">{ins.x}</p></div>))}</div>
         </div>
       );
     }
