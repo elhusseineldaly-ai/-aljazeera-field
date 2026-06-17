@@ -193,6 +193,52 @@
     function Bars({ data }) { const max=Math.max(1,...data.map(d=>d.value)); return (<div className="space-y-2.5">{data.map((d,i)=>(<div key={i} className="text-xs"><div className="flex justify-between mb-1"><span className="font-medium">{d.label}</span><span className="font-bold">{Number(d.value).toLocaleString()}</span></div><div className={"h-2 rounded-full overflow-hidden "+cTrack}><div className="h-2 rounded-full" style={{width:(d.value/max*100)+"%",background:d.color||COLORS[i%COLORS.length]}}/></div></div>))}</div>); }
     function Kpi({ label, value, color }) { return (<div className={"relative rounded-2xl p-4 overflow-hidden "+cCard}><div className="absolute top-0 right-0 h-full w-1" style={{background:color}}/><div className={"text-xs font-medium "+cMuted}>{label}</div><div className="text-xl font-extrabold mt-1" style={{color}}>{value}</div></div>); }
     function Inp({ label, v, on, type="text" }) { return (<label className="block"><span className={"text-xs font-medium "+cMuted}>{label}</span><input type={type} value={v} onChange={e=>on(e.target.value)} className={"w-full rounded-lg px-3 py-2 text-sm outline-none mt-1 "+cInput}/></label>); }
+
+    /* ===== رسوم بيانية ذكية (SVG) ===== */
+    function Donut({ data, size=148, centerLabel="الإجمالي" }) {
+      const total=data.reduce((a,d)=>a+(d.value||0),0);
+      const r=54, C=2*Math.PI*r, cx=size/2, cy=size/2; let off=0;
+      return (<div className="flex items-center gap-4 flex-wrap">
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="currentColor" strokeOpacity="0.08" strokeWidth="16"/>
+          <g transform={`rotate(-90 ${cx} ${cy})`}>
+            {total>0&&data.map((d,i)=>{ const len=(d.value/total)*C; const el=(<circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={d.color} strokeWidth="16" strokeLinecap="butt" strokeDasharray={`${len} ${C-len}`} strokeDashoffset={-off}/>); off+=len; return el; })}
+          </g>
+          <text x={cx} y={cy-2} textAnchor="middle" className="fill-current" style={{fontSize:24,fontWeight:800}}>{total}</text>
+          <text x={cx} y={cy+15} textAnchor="middle" style={{fontSize:10,fill:"#94a3b8"}}>{centerLabel}</text>
+        </svg>
+        <div className="space-y-1.5 flex-1 min-w-[130px]">
+          {data.map((d,i)=>(<div key={i} className="flex items-center justify-between gap-2 text-xs"><div className="flex items-center gap-1.5 min-w-0"><span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{background:d.color}}/><span className="truncate">{d.label}</span></div><span className={"font-bold whitespace-nowrap "+cMuted}>{Number(d.value).toLocaleString()} · {total?Math.round(d.value/total*100):0}%</span></div>))}
+        </div>
+      </div>);
+    }
+
+    function TrendArea({ points, color="#4F46E5", height=140 }) {
+      const gid=useRef("g"+Math.random().toString(36).slice(2,8)).current;
+      const W=320, H=height, pad=22;
+      const max=Math.max(1,...points.map(p=>p.value));
+      const n=points.length;
+      const X=i=> n<=1?W/2 : pad+(i*(W-2*pad)/(n-1));
+      const Y=v=> H-pad-(v/max*(H-2*pad-10));
+      const line=points.map((p,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(p.value).toFixed(1)}`).join(" ");
+      const area=`M${X(0).toFixed(1)},${H-pad} `+points.map((p,i)=>`L${X(i).toFixed(1)},${Y(p.value).toFixed(1)}`).join(" ")+` L${X(n-1).toFixed(1)},${H-pad} Z`;
+      return (<svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto"}}>
+        <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.28"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
+        {[0,0.5,1].map((g,i)=>(<line key={i} x1={pad} x2={W-pad} y1={Y(max*g)} y2={Y(max*g)} stroke="currentColor" strokeOpacity="0.1" strokeWidth="1" strokeDasharray="3 3"/>))}
+        <path d={area} fill={`url(#${gid})`}/>
+        <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
+        {points.map((p,i)=>(<g key={i}><circle cx={X(i)} cy={Y(p.value)} r="3.5" fill={color}/>{p.value?<text x={X(i)} y={Y(p.value)-8} textAnchor="middle" style={{fontSize:10,fontWeight:700}} fill={color}>{p.value}</text>:null}<text x={X(i)} y={H-5} textAnchor="middle" style={{fontSize:9,fill:"#94a3b8"}}>{p.label}</text></g>))}
+      </svg>);
+    }
+
+    function Funnel({ stages }) {
+      const top=Math.max(1,...stages.map(s=>s.value));
+      return (<div className="space-y-2.5">{stages.map((s,i)=>{ const pct=Math.round(s.value/top*100); return (
+        <div key={i}>
+          <div className="flex justify-between text-xs mb-1"><span className="font-medium">{s.label}</span><span className={"font-bold "+cMuted}>{s.value} · {pct}%</span></div>
+          <div className={"h-7 rounded-lg overflow-hidden "+cTrack}><div className="h-7 rounded-lg flex items-center justify-end px-2 text-white text-[11px] font-bold transition-all" style={{width:Math.max(pct,7)+"%",background:s.color}}>{s.value||""}</div></div>
+        </div>);})}</div>);
+    }
     function Sel({ label, v, on, opts }) { return (<label className="block"><span className={"text-xs font-medium "+cMuted}>{label}</span><select value={v} onChange={e=>on(e.target.value)} className={"w-full rounded-lg px-3 py-2 text-sm outline-none mt-1 "+cInput}>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select></label>); }
 
     /* حقل اختيار مرجعي من جدول آخر */
@@ -588,32 +634,76 @@
       // أكثر المنافسين ظهوراً
       const compCount=sortTop(group(competitors,"competitor"),8).filter(x=>x.label!=="غير محدد");
 
+      // توزيع حالات المشاريع والدهانين (Donut)
+      const projStatusData=group(projects,"status").map(x=>({label:x.label,value:x.value,color:STATUS_COLORS[x.label]||"#64748B"})).sort((a,b)=>b.value-a.value);
+      const painterStatusData=group(painters,"status").map(x=>({label:x.label,value:x.value,color:STATUS_COLORS[x.label]||"#64748B"})).sort((a,b)=>b.value-a.value);
+      // قيمة الفرص حسب المدينة (Donut بالألوان)
+      const cityValueDonut=cityValue.slice(0,6).map((x,i)=>({...x,color:COLORS[i%COLORS.length]}));
+      // مسار تحويل المشاريع (Funnel)
+      const st=s=>projects.filter(p=>p.status===s).length;
+      const funnel=[
+        {label:"فرص جديدة",value:st("فرصة"),color:"#2563EB"},
+        {label:"قيد المتابعة",value:st("قيد المتابعة"),color:"#D97706"},
+        {label:"تم الفوز",value:st("تم الفوز"),color:"#16A34A"},
+      ];
+      const won=st("تم الفوز"), lost=st("تمت الخسارة"), decided=won+lost;
+      const winRate=decided?Math.round(won/decided*100):0;
+      // نشاط الزيارات آخر 6 أشهر (Trend)
+      const months=[]; const now=new Date();
+      for(let i=5;i>=0;i--){ const dt=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({key:dt.toISOString().slice(0,7),label:dt.toLocaleDateString("ar",{month:"short"})}); }
+      const visTrend=months.map(m=>({label:m.label,value:visits.filter(v=>String(v.date||"").slice(0,7)===m.key).length}));
+      const totalOpp=projects.reduce((a,p)=>a+(Number(p.value)||0),0);
+      const totalRev=projects.reduce((a,p)=>a+(Number(p.expected_revenue)||0),0);
+
       const recentVisits=[...visits].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,5);
+      const empty=<div className={"text-xs py-6 text-center "+cMuted}>لا بيانات كافية بعد</div>;
+      const Card=({title,color,children,sub})=>(<div className={"rounded-2xl p-4 "+cCard}><div className="flex items-center justify-between mb-3"><div className="text-sm font-bold" style={color?{color}:{}}>{title}</div>{sub?<span className={"text-xs "+cMuted}>{sub}</span>:null}</div>{children}</div>);
+
       return (
         <div className="space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Kpi label="الدهانون" value={painters.length} color="#4F46E5"/>
             <Kpi label="النشطون" value={painters.filter(p=>p.status==="نشط").length} color="#16A34A"/>
             <Kpi label="المشاريع" value={projects.length} color="#D97706"/>
-            <Kpi label="مشاريع مكتسبة" value={projects.filter(p=>p.status==="تم الفوز").length} color="#0891B2"/>
+            <Kpi label="مشاريع مكتسبة" value={won} color="#0891B2"/>
             <Kpi label="المقاولون" value={contractors.length} color="#7C3AED"/>
             <Kpi label="الزيارات" value={visits.length} color="#2563EB"/>
-            <Kpi label="قيمة الفرص" value={projects.reduce((a,p)=>a+(Number(p.value)||0),0).toLocaleString()} color="#16A34A"/>
-            <Kpi label="إيراد متوقع" value={projects.reduce((a,p)=>a+(Number(p.expected_revenue)||0),0).toLocaleString()} color="#0EA5E9"/>
+            <Kpi label="قيمة الفرص" value={totalOpp.toLocaleString()+" ر.س"} color="#16A34A"/>
+            <Kpi label="إيراد متوقع" value={totalRev.toLocaleString()+" ر.س"} color="#0EA5E9"/>
           </div>
+
+          {/* رسوم التوزيع الحلقية */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">أداء المعارض (دهانون لكل معرض)</div>{byShowroom.length?<Bars data={byShowroom}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">أداء المدن (دهانون لكل مدينة)</div>{byCity.length?<Bars data={byCity}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">قيمة الفرص حسب المدينة</div>{cityValue.length?<Bars data={cityValue.map(x=>({...x,color:"#D97706"}))}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">أفضل الدهانين (نشاط)</div>{topPainters.length?<Bars data={topPainters.map(x=>({...x,color:"#4F46E5"}))}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">أفضل المقاولين (عدد المشاريع)</div>{topContractors.length?<Bars data={topContractors.map(x=>({...x,color:"#0891B2"}))}/>:<div className={"text-xs "+cMuted}>لا بيانات</div>}</div>
-            <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3">أكثر المنتجات استخداماً</div>{topProducts.length?<Bars data={topProducts.map(x=>({...x,color:"#16A34A"}))}/>:<div className={"text-xs "+cMuted}>سجّل المنتجات في الزيارات/المشاريع لتظهر هنا</div>}</div>
+            <Card title="المشاريع حسب الحالة">{projStatusData.length?<Donut data={projStatusData} centerLabel="مشروع"/>:empty}</Card>
+            <Card title="الدهانون حسب الحالة">{painterStatusData.length?<Donut data={painterStatusData} centerLabel="دهان"/>:empty}</Card>
           </div>
-          <div className={"rounded-2xl p-4 "+cCard}><div className="text-sm font-bold mb-3" style={{color:"#DC2626"}}>أكثر المنافسين ظهوراً</div>{compCount.length?<Bars data={compCount.map(x=>({...x,color:"#DC2626"}))}/>:<div className={"text-xs "+cMuted}>لا سجلات رصد بعد</div>}</div>
-          <div className={"rounded-2xl p-4 "+cCard}>
-            <div className="text-sm font-bold mb-3">أحدث الزيارات</div>
+
+          {/* منحنى نشاط الزيارات */}
+          <Card title="نشاط الزيارات" sub="آخر 6 أشهر">
+            {visits.length?<TrendArea points={visTrend} color="#4F46E5"/>:empty}
+          </Card>
+
+          {/* قمع التحويل + قيمة الفرص حسب المدينة */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card title="مسار تحويل المشاريع">
+              {projects.length?<><Funnel stages={funnel}/><div className={"mt-3 pt-3 border-t flex items-center justify-between text-xs "+cBorder}><span className={cMuted}>معدل الفوز من المحسوم ({decided})</span><span className="font-extrabold" style={{color:winRate>=50?"#16A34A":"#DC2626"}}>{winRate}%</span></div></>:empty}
+            </Card>
+            <Card title="قيمة الفرص حسب المدينة">{cityValueDonut.length&&totalOpp>0?<Donut data={cityValueDonut} size={148} centerLabel="ر.س"/>:empty}</Card>
+          </div>
+
+          {/* لوحات الأداء (شريطية) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card title="أداء المعارض" sub="دهانون لكل معرض">{byShowroom.length?<Bars data={byShowroom}/>:empty}</Card>
+            <Card title="أداء المدن" sub="دهانون لكل مدينة">{byCity.length?<Bars data={byCity}/>:empty}</Card>
+            <Card title="أفضل الدهانين" sub="حسب النشاط">{topPainters.length?<Bars data={topPainters.map(x=>({...x,color:"#4F46E5"}))}/>:empty}</Card>
+            <Card title="أفضل المقاولين" sub="عدد المشاريع">{topContractors.length?<Bars data={topContractors.map(x=>({...x,color:"#0891B2"}))}/>:empty}</Card>
+            <Card title="أكثر المنتجات استخداماً">{topProducts.length?<Bars data={topProducts.map(x=>({...x,color:"#16A34A"}))}/>:<div className={"text-xs py-6 text-center "+cMuted}>سجّل المنتجات في الزيارات/المشاريع لتظهر هنا</div>}</Card>
+            <Card title="أكثر المنافسين ظهوراً" color="#DC2626">{compCount.length?<Bars data={compCount.map(x=>({...x,color:"#DC2626"}))}/>:empty}</Card>
+          </div>
+
+          <Card title="أحدث الزيارات">
             <div className="space-y-2">{recentVisits.map(v=>(<button key={v.id} onClick={()=>onGo&&onGo("visits")} className={"w-full flex items-center justify-between text-sm border-b pb-2 text-right "+cBorder}><div className="min-w-0"><div className="font-semibold truncate">{v.target}</div><div className={"text-xs truncate "+cMuted}>{v.location} · {v.date}</div></div><Badge status={v.type}/></button>))}{recentVisits.length===0&&<div className={"text-xs "+cMuted}>لا توجد زيارات مسجّلة</div>}</div>
-          </div>
+          </Card>
         </div>
       );
     }
