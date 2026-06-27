@@ -8,13 +8,31 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="الجزيرة الميداني" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234338CA'/%3E%3Ctext x='50' y='70' font-size='58' fill='white' text-anchor='middle' font-family='sans-serif' font-weight='bold'%3E%D8%AC%3C/text%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  <link rel="manifest" href='data:application/manifest+json,{"name":"%D9%86%D8%B8%D8%A7%D9%85 %D8%A7%D9%84%D8%AC%D8%B2%D9%8A%D8%B1%D8%A9 %D8%A7%D9%84%D9%85%D9%8A%D8%AF%D8%A7%D9%86%D9%8A","short_name":"%D8%A7%D9%84%D8%AC%D8%B2%D9%8A%D8%B1%D8%A9","display":"standalone","background_color":"%230f172a","theme_color":"%234338CA","start_url":"."}'>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config = { darkMode: 'class' };</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <style> body { font-family: 'Segoe UI', Tahoma, sans-serif; } </style>
+  <style>
+    :root{ --brand:#4f46e5; --brand2:#7c3aed; }
+    *{ font-family:'Tajawal','Segoe UI',Tahoma,sans-serif; }
+    body{ margin:0; -webkit-tap-highlight-color:transparent; }
+    .glass{ backdrop-filter:saturate(160%) blur(14px); }
+    .brand-grad{ background:linear-gradient(135deg,#4f46e5 0%,#6d28d9 55%,#7c3aed 100%); }
+    .soft-shadow{ box-shadow:0 1px 2px rgba(15,23,42,.04), 0 10px 30px -14px rgba(79,70,229,.20); }
+    .lift{ transition:transform .18s ease, box-shadow .18s ease; }
+    .lift:hover{ transform:translateY(-3px); box-shadow:0 16px 40px -18px rgba(79,70,229,.45); }
+    .pop{ animation:pop .25s cubic-bezier(.2,.9,.3,1.3); }
+    @keyframes pop{ from{ transform:scale(.96); opacity:0 } to{ transform:scale(1); opacity:1 } }
+    .fade{ animation:fade .3s ease both; } @keyframes fade{ from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none} }
+    ::-webkit-scrollbar{ width:9px; height:9px } ::-webkit-scrollbar-thumb{ background:#c7cdd9; border-radius:9px } .dark ::-webkit-scrollbar-thumb{ background:#334155 }
+    .no-scrollbar::-webkit-scrollbar{ display:none } .no-scrollbar{ scrollbar-width:none }
+  </style>
 </head>
 <body>
   <div id="root"></div>
@@ -34,13 +52,13 @@
     function currentUserName(){ return (SESSION && (SESSION.name || SESSION.username)) || "—"; }
 
     /* ===== ثوابت التصميم ===== */
-    const cCard = "bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 shadow-sm";
-    const cMuted = "text-gray-500 dark:text-slate-400";
-    const cBorder = "border-gray-100 dark:border-slate-800";
-    const cHover = "hover:bg-indigo-50 dark:hover:bg-slate-800/70";
-    const cInput = "bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 focus:border-indigo-500";
-    const cTrack = "bg-gray-50 dark:bg-slate-800";
-    const cBtn = "bg-indigo-600 text-white hover:bg-indigo-700";
+    const cCard = "bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl soft-shadow";
+    const cMuted = "text-slate-500 dark:text-slate-400";
+    const cBorder = "border-slate-100 dark:border-slate-800";
+    const cHover = "hover:bg-indigo-50/70 dark:hover:bg-slate-800/70 transition-colors";
+    const cInput = "bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition";
+    const cTrack = "bg-slate-50 dark:bg-slate-800";
+    const cBtn = "brand-grad text-white hover:brightness-110 active:scale-[.98] transition shadow-md shadow-indigo-500/25";
     const cAccent = "text-indigo-600 dark:text-indigo-400";
 
     const STATUS_COLORS = {
@@ -67,33 +85,51 @@
     const RISK_COLORS = { "منخفض":"#16A34A","متوسط":"#D97706","عالي":"#DC2626","حرج":"#991B1B" };
     const RATING_COLORS = { "VIP":"#7C3AED","واعد":"#16A34A","يحتاج متابعة":"#DC2626","عادي":"#64748B" };
 
-    /* ===== كتالوج المنتجات ===== */
-    const CAT_COLORS = { "داخلي":"#16A34A","خارجي":"#D97706","معاجين":"#7C3AED","أسقف":"#2563EB","عوازل":"#0891B2","خزانات":"#DC2626" };
-    const PRODUCTS = [
-      { cat:"داخلي", name:"نوفال", desc:"دهان داخلي فاخر بملمس مخملي وقابلية فائقة للغسيل", benefits:["قابل للغسيل","تغطية عالية","مقاوم للبقع"], uses:["غرف النوم","المجالس"], comp:["Jotun Fenomastic"] },
-      { cat:"داخلي", name:"جرين", desc:"دهان داخلي صحي خالٍ من المركبات المتطايرة", benefits:["صحي وآمن","بدون رائحة"], uses:["غرف الأطفال","المستشفيات"], comp:["Jotun EcoHealth"] },
-      { cat:"داخلي", name:"غلوري", desc:"دهان داخلي اقتصادي بجودة موثوقة للمشاريع", benefits:["سعر تنافسي","سهل التطبيق"], uses:["العمائر","المشاريع الحكومية"], comp:["National Standard"] },
-      { cat:"خارجي", name:"رويال", desc:"دهان خارجي فاخر مقاوم للعوامل الجوية بضمان 10 سنوات", benefits:["مقاوم للأشعة","ضمان طويل"], uses:["الفلل الفاخرة","الواجهات"], comp:["Jotun Jotashield"] },
-      { cat:"خارجي", name:"ماكسم", desc:"دهان خارجي أكريليكي عالي المتانة", benefits:["مقاوم للقلويات","تغطية ممتازة"], uses:["العمائر","المجمعات"], comp:["National Exterior"] },
-      { cat:"خارجي", name:"نيوتيكس", desc:"دهان خارجي محبب يخفي عيوب الأسطح", benefits:["يخفي الشقوق","مظهر مميز"], uses:["الواجهات","الأسوار"], comp:["Jotun Jotatex"] },
-      { cat:"خارجي", name:"سالت", desc:"دهان خارجي بملمس رملي أنيق", benefits:["مقاوم للغبار","مظهر فاخر"], uses:["الواجهات الفاخرة"], comp:["Jotun Sandtex"] },
-      { cat:"معاجين", name:"جيبسنات", desc:"معجون مخصص لألواح الجبس بورد", benefits:["التصاق مثالي","بدون تشقق"], uses:["أسقف وجدران الجبس"], comp:["Sigma Gypsum"] },
-      { cat:"معاجين", name:"غرين بوتي", desc:"معجون داخلي صحي بسطح أملس", benefits:["صنفرة سهلة","سطح أملس"], uses:["تجهيز الجدران"], comp:["National Putty"] },
-      { cat:"أسقف", name:"إمبرور", desc:"دهان أسقف فائق البياض", benefits:["بياض ناصع","بدون تناثر"], uses:["الأسقف الداخلية"], comp:["Jotun Ceiling"] },
-      { cat:"عوازل", name:"كول روف", desc:"عازل حراري عاكس يخفض الحرارة حتى 15 درجة", benefits:["توفير كهرباء","عاكس للحرارة"], uses:["أسطح الفلل والمصانع"], comp:["Jotun Cool Shield"] },
-      { cat:"عوازل", name:"فليكس جارد", desc:"عازل مرن متعدد الاستخدامات", benefits:["مرونة عالية","يتحمل الحركة"], uses:["الأسطح","الخزانات"], comp:["Sigma Flex"] },
-      { cat:"خزانات", name:"جاز تانك", desc:"دهان إيبوكسي آمن لخزانات مياه الشرب", benefits:["معتمد صحياً","مقاوم للطحالب"], uses:["خزانات مياه الشرب"], comp:["Hempel Tank"] },
-    ];
-    const PRODUCT_NAMES = PRODUCTS.map(p=>p.name);
-    const RECO_MAP = {
-      "فيلا - واجهات خارجية":["رويال","ماكسم","نيوتيكس","سالت"],
-      "فيلا - تشطيب داخلي فاخر":["نوفال","جرين","إمبرور"],
-      "عمارة - مشروع اقتصادي":["غلوري","ماكسم","غرين بوتي"],
-      "جبس بورد":["جيبسنات","إمبرور"],
-      "أسطح وعوازل":["كول روف","فليكس جارد"],
-      "مدارس ومستشفيات":["جرين","غرين بوتي","إمبرور"],
-      "خزانات مياه":["جاز تانك","فليكس جارد"],
+    /* ===== كتالوج المنتجات (مستخرَج من ملف الحصة السوقية) ===== */
+    const OWN_COMPANY = "الجزيرة";
+    const COMPANY_COLORS = {
+      "الجزيرة":"#4338CA","جوتن":"#DC2626","سافيتو":"#0891B2","سيكا":"#CA8A04",
+      "اوسكار":"#7C3AED","هيمبل":"#15803D","سيجما":"#DB2777","777":"#EA580C",
+      "يو اس جي":"#0EA5E9","ساف":"#9333EA","أخرى (تجاري)":"#64748B"
     };
+    const companyColor = c => COMPANY_COLORS[c] || "#64748B";
+
+const DEFAULT_CATALOG = [
+  {id:"cement",family:"الإسمنتيات والترويبة",color:"#0891B2",icon:"layers",items:[{c:"الجزيرة",p:"تايلكس"},{c:"الجزيرة",p:"سانتكس"},{c:"الجزيرة",p:"كراك فيلر سي"},{c:"الجزيرة",p:"جراوتكس"},{c:"الجزيرة",p:"روبوكسي"},{c:"سافيتو",p:"غراء سيراميك"},{c:"سافيتو",p:"غراء بورسلين"},{c:"سافيتو",p:"تايل جراوت"},{c:"سيكا",p:"سيكا 216 بريميوم"},{c:"سيكا",p:"سيكا 202 عادي"}]},
+  {id:"primer",family:"الأساسات",color:"#16A34A",icon:"shield",items:[{c:"الجزيرة",p:"جرين برايمر"},{c:"الجزيرة",p:"رويال برايمر"},{c:"الجزيرة",p:"ماكس برايمر"},{c:"الجزيرة",p:"سي برايمر"},{c:"الجزيرة",p:"تكس برايمر"},{c:"جوتن",p:"ماسونري برايمر"},{c:"جوتن",p:"جوتاشيلد الكالي ريسيستانت"},{c:"جوتن",p:"ايزي كوت"},{c:"جوتن",p:"ديروسان داخلي"},{c:"جوتن",p:"بينتريتنج"},{c:"اوسكار",p:"اوسكار أساس"},{c:"هيمبل",p:"مايسترو أساس"},{c:"هيمبل",p:"توباز أساس"},{c:"سيجما",p:"سيجما اكريليك برايمر"},{c:"سيجما",p:"سيجما ماسونري برايمر"},{c:"777",p:"مطفي أبيض"}]},
+  {id:"putty",family:"المعاجين",color:"#7C3AED",icon:"brush",items:[{c:"الجزيرة",p:"جرين بوتي"},{c:"الجزيرة",p:"جيبسونيت"},{c:"جوتن",p:"سمارت"},{c:"جوتن",p:"ستوكو"},{c:"جوتن",p:"جيبسم برو"},{c:"سافيتو",p:"فيتونيت"},{c:"يو اس جي",p:"شيتروك"},{c:"ساف",p:"معجون ساف"},{c:"اوسكار",p:"معجون اوسكار"},{c:"اوسكار",p:"اوسكارنيت"},{c:"سيجما",p:"سيجما اكوافيل معجون جدران"},{c:"سيجما",p:"سيجما وول فيلر"},{c:"هيمبل",p:"هيمبل معجون توباز"},{c:"هيمبل",p:"هيمبل معجون جدران"}]},
+  {id:"interior",family:"الدهانات الداخلية (المائية)",color:"#D97706",icon:"home",items:[{c:"الجزيرة",p:"سوبر وايت"},{c:"الجزيرة",p:"جرين مت"},{c:"الجزيرة",p:"جرين سلك"},{c:"الجزيرة",p:"جرين سيمي جلوس"},{c:"الجزيرة",p:"جرين جلوس"},{c:"الجزيرة",p:"نوفل تشارم"},{c:"الجزيرة",p:"نوفل"},{c:"الجزيرة",p:"نوفل سيمي جلوس"},{c:"الجزيرة",p:"جلوري"},{c:"الجزيرة",p:"ايمبرور"},{c:"جوتن",p:"فينوماستيك راقي"},{c:"جوتن",p:"فينوماستيك مذهل"},{c:"جوتن",p:"فينوماستيك مذهل حياة"},{c:"جوتن",p:"فينوماستيك بيتي حريري"},{c:"جوتن",p:"فينوماستيك ألوان ناصعة"},{c:"جوتن",p:"ديروسان اكشن"},{c:"جوتن",p:"ديروسان 02 داخلي مطفي"},{c:"اوسكار",p:"سوبر بيوتي"},{c:"اوسكار",p:"ريتش بيوتي"},{c:"777",p:"777 توب كوت"},{c:"سيجما",p:"سيجما كريل"},{c:"سيجما",p:"سيجما كولور"},{c:"سيجما",p:"اكوامت"},{c:"سيجما",p:"بيرفكس"},{c:"سيجما",p:"سيجما تكس"}]},
+  {id:"oil",family:"الدهانات الزيتية",color:"#2563EB",icon:"drop",items:[{c:"الجزيرة",p:"جزيتال فلات"},{c:"الجزيرة",p:"جزيتال سلك"},{c:"الجزيرة",p:"جزيتال سيمي جلوس"},{c:"الجزيرة",p:"جزيتال جلوس"},{c:"الجزيرة",p:"ألكيد فلات"},{c:"الجزيرة",p:"ألكيد سيمي جلوس"},{c:"الجزيرة",p:"ألكيد جلوس"},{c:"جوتن",p:"ديروسان انامل"},{c:"جوتن",p:"بنجالك"},{c:"جوتن",p:"فينوماستيك زيتي"},{c:"اوسكار",p:"اوسكار زيتي داخلي"},{c:"سيجما",p:"دهان سيجما زيتي"},{c:"هيمبل",p:"دهان هيمبل زيتي"}]},
+  {id:"insulation",family:"العوازل",color:"#DC2626",icon:"umbrella",items:[{c:"الجزيرة",p:"فلكسي جارد"},{c:"الجزيرة",p:"رووف بروتكشن"},{c:"الجزيرة",p:"كوول رووف"},{c:"الجزيرة",p:"جاز تانك"},{c:"الجزيرة",p:"بروفكس"},{c:"جوتن",p:"روف جارد"},{c:"اوسكار",p:"زيروليك"},{c:"سيجما",p:"اكوا روف شيلد"},{c:"سيجما",p:"سيجما بروف اسمنتي"},{c:"هيمبل",p:"كونتكس"},{c:"هيمبل",p:"هيمبل عازل مائي"}]},
+  {id:"exterior",family:"الدهانات الخارجية",color:"#9333EA",icon:"building",items:[{c:"الجزيرة",p:"رويال مت"},{c:"الجزيرة",p:"رويال سلك"},{c:"الجزيرة",p:"رويال سيمي جلوس"},{c:"الجزيرة",p:"مكسيم مت"},{c:"الجزيرة",p:"مكسيم سلك"},{c:"الجزيرة",p:"مكسيم سيمي جلوس"},{c:"الجزيرة",p:"مكسيم جلوس"},{c:"الجزيرة",p:"نيوتكس"},{c:"الجزيرة",p:"لاينتكس"},{c:"الجزيرة",p:"ملتي كلر"},{c:"الجزيرة",p:"رستيك"},{c:"الجزيرة",p:"سوفتكس"},{c:"الجزيرة",p:"ماروتكس"},{c:"الجزيرة",p:"تكتشر"},{c:"الجزيرة",p:"مشاشكو"},{c:"جوتن",p:"جوتاشيلد كولور اكستريم"},{c:"جوتن",p:"جوتاشيلد دهان خارجي"},{c:"جوتن",p:"بروفايل سهل"},{c:"جوتن",p:"بروفايل أصلي"},{c:"جوتن",p:"نووفو"},{c:"جوتن",p:"كانفا"},{c:"جوتن",p:"ترافراين"},{c:"جوتن",p:"تكس فاين"},{c:"جوتن",p:"تكس الترا"},{c:"جوتن",p:"تكس ميديوم"},{c:"جوتن",p:"تكسو اتش بي"},{c:"جوتن",p:"جوتاشيلد ايترنا"},{c:"اوسكار",p:"اوسكار دهان خارجي"},{c:"اوسكار",p:"دروفايل"},{c:"اوسكار",p:"ترافرتينا"},{c:"سيجما",p:"اكسترنال توب كوت"},{c:"سيجما",p:"سيجما جارديان كوت"},{c:"سيجما",p:"الترا بيرفكس"},{c:"سيجما",p:"سيجما كريل فلات"},{c:"سيجما",p:"بروفايل 4 مم"},{c:"سيجما",p:"تيكتشرد ام بي"},{c:"سيجما",p:"تيكتشرد أي بي"},{c:"سيجما",p:"بروفايل ميديوم"},{c:"سيجما",p:"بروفايل فاين"},{c:"سيجما",p:"بروفايل اكسترا فاين"},{c:"هيمبل",p:"مايسترو مت ايملشن"},{c:"هيمبل",p:"مايسترو انامل"},{c:"هيمبل",p:"كاسا روستيكا"},{c:"هيمبل",p:"سبراي تكس"}]}
+];
+
+    /* تحميل/حفظ الكتالوج (قابل للتعديل) — يُحفظ محلياً ويُزامَن سحابياً إن توفّر الجدول */
+    const CAT_KEY = "jazeera_catalog_v2";
+    function loadCatalog(){ try{ const s=localStorage.getItem(CAT_KEY); if(s){ const x=JSON.parse(s); if(Array.isArray(x)&&x.length) return x; } }catch(e){} return JSON.parse(JSON.stringify(DEFAULT_CATALOG)); }
+    let CATALOG = loadCatalog();
+    let PIDX = {};
+    function buildPIDX(){ PIDX={}; CATALOG.forEach(fam=>(fam.items||[]).forEach(it=>{ PIDX[it.p]={company:it.c,family:fam.family,color:fam.color}; })); }
+    buildPIDX();
+    function persistCatalog(c){ CATALOG=c; buildPIDX(); try{ localStorage.setItem(CAT_KEY, JSON.stringify(c)); }catch(e){}
+      db.from("product_catalog").upsert([{id:1,data:c}]).then(()=>{}).catch(()=>{}); }
+    async function cloudLoadCatalog(){ try{ const {data,error}=await db.from("product_catalog").select("data").eq("id",1).limit(1);
+      if(!error && data && data[0] && Array.isArray(data[0].data) && data[0].data.length){ CATALOG=data[0].data; buildPIDX(); try{localStorage.setItem(CAT_KEY,JSON.stringify(CATALOG));}catch(e){} return true; } }catch(e){} return false; }
+
+    /* ===== ترميز المنتجات المرصودة في المشاريع/الزيارات =====
+       تُخزَّن كمصفوفة JSON: [{f:عائلة, c:شركة, p:منتج}] داخل حقل products */
+    function parseFindings(v){
+      if(Array.isArray(v)) return v.filter(x=>x&&x.p);
+      if(!v) return [];
+      const s=String(v).trim();
+      if(s[0]==="["){ try{ const x=JSON.parse(s); if(Array.isArray(x)) return x.filter(o=>o&&o.p); }catch(e){} }
+      // توافق رجعي: نص بأسماء منتجات مفصولة بفواصل
+      return s.split(",").map(t=>t.trim()).filter(Boolean).map(name=>{ const m=PIDX[name]; return {f:m?m.family:"",c:m?m.company:"",p:name}; });
+    }
+    const splitProducts = v => parseFindings(v).map(x=>x.p);
+    function findingsText(arr){ return parseFindings(arr).map(x=>x.c?(x.c+" "+x.p):x.p).join("، "); }
+    function mergeFindings(a,b){ const out=[...parseFindings(a)]; parseFindings(b).forEach(x=>{ if(!out.some(o=>o.c===x.c&&o.p===x.p)) out.push(x); }); return out; }
+    function encodeFindings(arr){ return JSON.stringify(parseFindings(arr)); }
 
     /* ===== إعدادات الأقسام ===== */
     const CONFIG = {
@@ -125,10 +161,47 @@
 
     /* ===== أدوات مساعدة جديدة ===== */
     const TODAY = ()=>new Date().toISOString().slice(0,10);
+
+    /* ===== إشعارات الجوال ===== */
+    const NOTIF_KEY="jazeera_notif_enabled", NOTIF_SENT_KEY="jazeera_notif_sent";
+    function notifEnabled(){ return localStorage.getItem(NOTIF_KEY)==="1" && ("Notification" in window) && Notification.permission==="granted"; }
+    async function enableNotifications(){
+      if(!("Notification" in window)){ alert("متصفّحك لا يدعم الإشعارات. للحصول على تنبيهات الجوال أضِف التطبيق إلى الشاشة الرئيسية (Add to Home Screen)."); return false; }
+      let perm=Notification.permission;
+      if(perm!=="granted") perm=await Notification.requestPermission();
+      if(perm==="granted"){ localStorage.setItem(NOTIF_KEY,"1"); try{ new Notification("تم تفعيل التنبيهات ✓",{body:"ستصلك مهامك المستحقّة على الجوال.",dir:"rtl",lang:"ar"}); }catch(e){} return true; }
+      alert("لم يتم منح إذن الإشعارات. فعّلها من إعدادات المتصفح للموقع."); return false;
+    }
+    function fireNotification(title, body, tag){
+      if(!notifEnabled()) return;
+      let sent={}; try{ sent=JSON.parse(localStorage.getItem(NOTIF_SENT_KEY)||"{}"); }catch(e){}
+      const todayTag=(tag||title)+"|"+TODAY();
+      if(sent[todayTag]) return;                 // لا نكرّر نفس التنبيه في نفس اليوم
+      try{ new Notification(title,{body,dir:"rtl",lang:"ar",tag:todayTag,icon:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234338CA'/%3E%3Ctext x='50' y='70' font-size='58' fill='white' text-anchor='middle' font-family='sans-serif' font-weight='bold'%3E%D8%AC%3C/text%3E%3C/svg%3E"}); sent[todayTag]=1; localStorage.setItem(NOTIF_SENT_KEY,JSON.stringify(sent)); }catch(e){}
+    }
+
     const daysAgo = s=>s?Math.round((Date.now()-new Date(s).getTime())/86400000):9999;
     const mapsUrl = (lat,lng)=>`https://www.google.com/maps?q=${lat},${lng}`;
     const toArr = v=>Array.isArray(v)?v:(v?(()=>{try{const x=JSON.parse(v);return Array.isArray(x)?x:[];}catch(e){return [];}})():[]);
-    const splitProducts = v=>String(v||"").split(",").map(s=>s.trim()).filter(Boolean);
+
+    /* تزامن الزيارة مع الدهان/المقاول/المشروع وضخ المنتجات المرصودة في المكان الصحيح */
+    async function syncVisit(visit){
+      try{
+        const today=TODAY(); const findings=parseFindings(visit.products);
+        const upd=async (tbl,name,patch)=>{ if(!name) return; const {data}=await db.from(tbl).select("id,products").ilike("name",name).limit(1);
+          if(data&&data[0]){ const id=data[0].id; const p={...patch}; if(patch.__mergeProducts){ delete p.__mergeProducts; p.products=encodeFindings(mergeFindings(data[0].products,findings)); } await db.from(tbl).update(p).eq("id",id); return id; }
+          return null; };
+        if(visit.type==="دهان"){ const nm=visit.painter||visit.target; await upd("painters",nm,{last_visit:today,last_contact:today, ...(visit.next_followup?{next_followup:visit.next_followup,followup_status:"مجدولة"}:{})}); }
+        if(visit.type==="مقاول"){ const nm=visit.contractor||visit.target; const id=await upd("contractors",nm,{ ...(visit.next_followup?{next_followup:visit.next_followup,followup_status:"مجدولة"}:{})}); }
+        if(visit.type==="مشروع"){ const nm=visit.project||visit.target;
+          const got=await upd("projects",nm,{__mergeProducts:true, ...(visit.next_followup?{next_followup:visit.next_followup,followup_status:"مجدولة"}:{})});
+          if(!got && findings.length){ // إنشاء مشروع جديد تلقائياً إن لم يوجد
+            await db.from("projects").insert([{name:nm,status:"قيد المتابعة",products:encodeFindings(findings),notes:"أُنشئ تلقائياً من زيارة ميدانية", ...(visit.lat?{lat:visit.lat,lng:visit.lng}:{})}]); }
+        }
+        // لأي زيارة فيها مشروع مرتبط، ادفع المنتجات إليه أيضاً
+        if(visit.project && visit.type!=="مشروع" && findings.length){ await upd("projects",visit.project,{__mergeProducts:true}); }
+      }catch(e){ /* تجاهل أخطاء التزامن حتى لا تعطّل الحفظ */ }
+    }
 
     async function logActivity(action, table, label, name){
       try{ await db.from("activity_log").insert([{ action, entity:table, entity_label:label, record_name:name||"", user_name:currentUserName() }]); }
@@ -187,6 +260,19 @@
         printer:<g><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></g>,
         plus:<path d="M12 5v14M5 12h14"/>,
         star:<path d="M12 2l3 6.5 7 .9-5 4.8 1.3 7L12 18l-6.3 3.2L7 14.2l-5-4.8 7-.9z"/>,
+        layers:<g><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></g>,
+        shield:<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>,
+        brush:<g><path d="M9.06 11.9 18 3a2.1 2.1 0 0 1 3 3l-8.9 8.94"/><path d="M7 14a3 3 0 0 0-3 3c0 1.3-1 2-2 3 1.4 1 4 1.5 6 0a3 3 0 0 0-1-6z"/></g>,
+        home:<g><path d="M3 10 12 3l9 7"/><path d="M5 9v11h14V9"/></g>,
+        drop:<path d="M12 2.7S5 10 5 14a7 7 0 0 0 14 0c0-4-7-11.3-7-11.3z"/>,
+        umbrella:<g><path d="M12 2a9 9 0 0 0-9 9h18a9 9 0 0 0-9-9z"/><path d="M12 11v8a2 2 0 0 0 4 0"/></g>,
+        building:<g><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h.01M15 7h.01M9 11h.01M15 11h.01M9 15h.01M15 15h.01"/></g>,
+        chart:<g><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></g>,
+        trophy:<g><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M5 5H3v2a3 3 0 0 0 3 3M19 5h2v2a3 3 0 0 1-3 3"/></g>,
+        edit:<g><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></g>,
+        trash:<g><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></g>,
+        save:<g><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></g>,
+        target:<g><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></g>,
       }[n];
       return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}>{ic}</svg>;
     }
@@ -253,14 +339,46 @@
         <datalist id={"ref-"+label}>{options.map(o=><option key={o} value={o}/>)}</datalist>
       </label>);
     }
-    /* حقل اختيار منتجات متعدد */
-    function ProductsField({ label, v, on }) {
-      const sel=splitProducts(v);
-      const toggle=n=>{ const s=new Set(sel); s.has(n)?s.delete(n):s.add(n); on([...s].join(", ")); };
-      return (<div className="sm:col-span-2"><span className={"text-xs font-medium "+cMuted}>{label}</span>
-        <div className="flex flex-wrap gap-1.5 mt-1.5">{PRODUCT_NAMES.map(n=>(<button type="button" key={n} onClick={()=>toggle(n)} className={"px-2.5 py-1 rounded-lg text-xs font-bold transition "+(sel.includes(n)?cBtn:cTrack+" "+cMuted+" "+cHover)}>{n}</button>))}</div>
+    /* بطاقة منتج مرصود ملوّنة */
+    function FindingPill({ f, onRemove }) {
+      const col=companyColor(f.c);
+      return (<span className="inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-2.5 py-1 text-xs font-bold pop" style={{background:col+"18",color:col,border:"1px solid "+col+"55"}}>
+        <span className="opacity-70 font-extrabold">{f.c}</span><span>{f.p}</span>
+        {onRemove&&<button type="button" onClick={onRemove} className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[10px]" style={{background:col}}>×</button>}
+      </span>);
+    }
+    /* الحقل السريع: عائلة ← شركة ← منتج (بنقرات قليلة، مناسب للزيارات الميدانية) */
+    function FindingsField({ label, v, on, compact }) {
+      const findings=parseFindings(v);
+      const [fam,setFam]=useState(CATALOG[0]); const [comp,setComp]=useState(null); const [qq,setQq]=useState("");
+      const add=(c,p)=>{ if(findings.some(x=>x.c===c&&x.p===p)) return; on(encodeFindings([...findings,{f:fam.family,c,p}])); };
+      const removeAt=i=>on(encodeFindings(findings.filter((_,j)=>j!==i)));
+      const companies=[...new Set((fam.items||[]).map(it=>it.c))];
+      let prods=(fam.items||[]).filter(it=>(!comp||it.c===comp));
+      if(qq.trim()) prods=prods.filter(it=>(it.p+" "+it.c).includes(qq.trim()));
+      return (<div className="sm:col-span-2">
+        <div className="flex items-center justify-between mb-1.5"><span className={"text-xs font-bold "+cMuted}>{label}</span>{findings.length>0&&<span className="text-[11px] font-bold text-indigo-500">{findings.length} منتج مرصود</span>}</div>
+        {findings.length>0&&<div className="flex flex-wrap gap-1.5 mb-2.5 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60">{findings.map((f,i)=><FindingPill key={i} f={f} onRemove={()=>removeAt(i)}/>)}</div>}
+        {/* تبويبات العائلات */}
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+          {CATALOG.map(fm=>(<button type="button" key={fm.id} onClick={()=>{setFam(fm);setComp(null);}} className={"shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition "+(fam.id===fm.id?"text-white shadow-md":cTrack+" "+cMuted)} style={fam.id===fm.id?{background:fm.color}:{}}><Icon n={fm.icon} s={13}/>{fm.family}</button>))}
+        </div>
+        {/* شركات العائلة */}
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          <button type="button" onClick={()=>setComp(null)} className={"px-2.5 py-1 rounded-lg text-[11px] font-bold "+(!comp?cBtn:cTrack+" "+cMuted)}>الكل</button>
+          {companies.map(c=>(<button type="button" key={c} onClick={()=>setComp(comp===c?null:c)} className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition" style={comp===c?{background:companyColor(c),color:"#fff"}:{background:companyColor(c)+"18",color:companyColor(c)}}>{c}{c===OWN_COMPANY?" ★":""}</button>))}
+        </div>
+        {/* المنتجات كأزرار كبيرة قابلة للنقر */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mt-2 max-h-52 overflow-y-auto pr-1">
+          {prods.map((it,k)=>{ const on_=findings.some(x=>x.c===it.c&&x.p===it.p); const col=companyColor(it.c);
+            return (<button type="button" key={k} onClick={()=>add(it.c,it.p)} disabled={on_} className={"text-right rounded-xl px-2.5 py-2 text-xs font-bold leading-tight transition lift "+(on_?"opacity-50 cursor-default ":"")} style={{background:on_?col+"22":col+"12",color:col,border:"1px solid "+col+"40"}}>
+              <span className="block opacity-70 text-[10px] font-extrabold">{it.c}</span>{it.p}{on_?" ✓":""}</button>);})}
+          {prods.length===0&&<div className={"col-span-full text-center text-xs py-3 "+cMuted}>لا منتجات</div>}
+        </div>
       </div>);
     }
+    /* للحفاظ على التوافق مع الاستدعاءات القديمة */
+    const ProductsField = FindingsField;
     /* حقل رفع الصور */
     function ImagesField({ label, v, on, folder }) {
       const imgs=toArr(v); const [busy,setBusy]=useState(false); const ref=useRef();
@@ -394,6 +512,7 @@
         let res; if(editor.mode==="add")res=await db.from(cfg.table).insert([payload]); else res=await db.from(cfg.table).update(payload).eq("id",editor.id);
         setSaving(false); if(res.error){alert("خطأ في الحفظ: "+res.error.message);return;}
         logActivity(editor.mode==="add"?"إضافة":"تعديل", cfg.table, cfg.title, payload[cfg.fields[0].key]);
+        if(cfg.table==="visits") await syncVisit(payload);
         setEditor(null); await load();
       }
       async function remove(r){ if(!confirm("متأكد من الحذف؟"))return; const {error}=await db.from(cfg.table).delete().eq("id",r.id); if(error){alert("خطأ: "+error.message);return;} logActivity("حذف",cfg.table,cfg.title,r[cfg.fields[0].key]); setView("list");setSelId(null);load(); }
@@ -413,15 +532,29 @@
           {view==="detail"&&selected&&(
             <div className="space-y-4">
               <button onClick={()=>{setView("list");setSelId(null);}} className={"inline-flex items-center gap-1 text-sm font-bold "+cAccent}><Icon n="chevron" s={16}/> رجوع للقائمة</button>
-              <div className={"rounded-2xl p-6 "+cCard}>
-                <div className="flex items-center gap-4 pb-4 mb-4 border-b border-dashed" style={{borderColor:"#e5e7eb"}}>
-                  <div className="w-16 h-16 rounded-2xl text-white font-extrabold text-2xl flex items-center justify-center shrink-0" style={{background:avatarBg(selected)}}>{initial(selected)}</div>
-                  <div className="min-w-0 flex-1"><h2 className="text-xl font-extrabold truncate">{selected[cfg.fields[0].key]}</h2><div className="mt-1.5 flex items-center gap-2 flex-wrap"><Badge status={cfg.statusField?selected[cfg.statusField]:null}/>{(selected.lat&&selected.lng)?<a href={mapsUrl(selected.lat,selected.lng)} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><Icon n="pin" s={14}/> فتح في الخرائط</a>:null}</div></div>
+              <div className={"overflow-hidden "+cCard}>
+                {/* رأس ملوّن بتدرّج حسب حالة السجل */}
+                <div className="relative p-6 text-white" style={{background:`linear-gradient(135deg, ${avatarBg(selected)}, ${avatarBg(selected)}cc)`}}>
+                  <div className="absolute -left-8 -top-10 w-40 h-40 rounded-full bg-white/10"/>
+                  <div className="absolute -left-2 bottom-2 w-24 h-24 rounded-full bg-white/10"/>
+                  <div className="relative flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-white/20 border border-white/30 font-extrabold text-2xl flex items-center justify-center shrink-0">{initial(selected)}</div>
+                    <div className="min-w-0 flex-1"><h2 className="text-xl font-extrabold truncate">{selected[cfg.fields[0].key]}</h2>
+                      <div className="mt-1.5 text-xs text-white/90 truncate">{cfg.subtitle(selected)}</div>
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">{cfg.statusField&&selected[cfg.statusField]?<span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/25">{selected[cfg.statusField]}</span>:null}{(selected.lat&&selected.lng)?<a href={mapsUrl(selected.lat,selected.lng)} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full"><Icon n="pin" s={13}/> الخرائط</a>:null}</div>
+                    </div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                  {cfg.fields.slice(1).filter(f=>f.type!=="images"&&f.type!=="products").map(f=>(<div key={f.key} className="flex items-center justify-between gap-3 border-b pb-2 border-gray-100 dark:border-slate-800"><span className={"text-xs "+cMuted}>{f.label}</span><span className="font-semibold text-left break-words">{fmt(f,selected[f.key])}</span></div>))}
+                <div className="p-5 sm:p-6">
+                {/* بطاقات معلومات ملوّنة منحنية الأطراف */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {cfg.fields.slice(1).filter(f=>f.type!=="images"&&f.type!=="products"&&f.key!=="notes").map((f,idx)=>{ const col=COLORS[idx%COLORS.length];
+                    return (<div key={f.key} className="rounded-2xl p-3 fade" style={{background:col+"0e",border:"1px solid "+col+"26"}}>
+                      <div className="text-[11px] font-bold" style={{color:col}}>{f.label}</div>
+                      <div className="text-sm font-extrabold mt-1 break-words">{fmt(f,selected[f.key])}</div></div>);})}
                 </div>
-                {cfg.fields.filter(f=>f.type==="products").map(f=>{const pr=splitProducts(selected[f.key]);return pr.length?<div key={f.key} className="mt-4"><div className="text-xs font-bold mb-1.5">{f.label}</div><div className="flex flex-wrap gap-1.5">{pr.map(n=><Pill key={n} text={n} color="#0891B2"/>)}</div></div>:null;})}
+                {(()=>{const nf=cfg.fields.find(f=>f.key==="notes"); return nf&&selected.notes?<div className="mt-3 rounded-2xl p-3 bg-amber-50 dark:bg-amber-900/15 border border-amber-200/60 dark:border-amber-900/40"><div className="text-[11px] font-bold text-amber-700 dark:text-amber-400">ملاحظات</div><div className="text-sm mt-1 leading-relaxed break-words">{selected.notes}</div></div>:null;})()}
+                {cfg.fields.filter(f=>f.type==="products").map(f=>{const pr=parseFindings(selected[f.key]);return pr.length?<div key={f.key} className="mt-4"><div className="text-xs font-bold mb-2 flex items-center gap-1.5"><Icon n="layers" s={14} c={cAccent}/> {f.label} ({pr.length})</div><div className="flex flex-wrap gap-1.5">{pr.map((x,i)=><FindingPill key={i} f={x}/>)}</div></div>:null;})}
                 {cfg.fields.some(f=>f.type==="images")&&<div className="mt-4"><Gallery imgs={selected.images}/></div>}
                 <div className="flex gap-2 mt-5 flex-wrap">
                   <button onClick={()=>openEdit(selected)} className={"flex-1 rounded-xl py-2.5 text-sm font-bold "+cBtn}>تعديل</button>
@@ -431,6 +564,7 @@
                   <button onClick={()=>onGo&&onGo("projects",{painter:selected.name})} className={"flex-1 rounded-xl py-2 text-xs font-bold "+cTrack+" "+cAccent+" "+cHover}>+ مشروع لهذا الدهان</button>
                   <button onClick={()=>onGo&&onGo("visits",{painter:selected.name,target:selected.name,type:"دهان",date:TODAY()})} className={"flex-1 rounded-xl py-2 text-xs font-bold "+cTrack+" "+cAccent+" "+cHover}>+ زيارة لهذا الدهان</button>
                 </div>)}
+                </div>
               </div>
               <div className={"rounded-2xl p-5 "+cCard}>
                 <div className="flex items-center gap-2 mb-4"><Icon n="link" s={16} c={cAccent}/><h3 className="font-bold text-sm">العلاقات والنشاط المرتبط</h3></div>
@@ -520,31 +654,48 @@
     }
 
     /* ===== زيارة سريعة (أقل من دقيقة) ===== */
+    const VISIT_ICON={"دهان":"brush","مشروع":"building","معرض":"home","مقاول":"target","استشاري":"star","منافس":"shield"};
     function QuickVisit({ open, onClose, onSaved }) {
-      const [d,setD]=useState({target:"",type:"دهان",results:"",next_followup:""});
+      const [d,setD]=useState({target:"",type:"دهان",results:"",next_followup:"",products:"[]"});
       const [saving,setSaving]=useState(false); const [geo,setGeo]=useState(null); const [imgs,setImgs]=useState([]);
-      useEffect(()=>{ if(open){ setD({target:"",type:"دهان",results:"",next_followup:""}); setGeo(null); setImgs([]); getGeo().then(setGeo); } },[open]);
+      const [opts,setOpts]=useState({painters:[],projects:[],contractors:[]}); const [step,setStep]=useState(1);
+      useEffect(()=>{ if(open){ setD({target:"",type:"دهان",results:"",next_followup:"",products:"[]"}); setGeo(null); setImgs([]); setStep(1); getGeo().then(setGeo);
+        Promise.all([db.from("painters").select("name"),db.from("projects").select("name"),db.from("contractors").select("name")]).then(([a,b,c])=>setOpts({painters:(a.data||[]).map(x=>x.name).filter(Boolean),projects:(b.data||[]).map(x=>x.name).filter(Boolean),contractors:(c.data||[]).map(x=>x.name).filter(Boolean)})); } },[open]);
       if(!open) return null;
+      const suggestList = d.type==="دهان"?opts.painters : d.type==="مشروع"?opts.projects : d.type==="مقاول"?opts.contractors : [];
+      const matches = d.target.trim()? suggestList.filter(n=>n.includes(d.target.trim())).slice(0,6) : suggestList.slice(0,6);
       async function save(){ if(!d.target.trim()){alert("اكتب اسم الجهة");return;} setSaving(true);
-        const payload={ target:d.target, type:d.type, date:TODAY(), results:d.results, next_followup:d.next_followup||null, images:imgs };
+        const payload={ target:d.target, type:d.type, date:TODAY(), results:d.results, next_followup:d.next_followup||null, images:imgs, products:encodeFindings(d.products) };
         if(geo){ payload.lat=geo.lat; payload.lng=geo.lng; }
         if(d.type==="دهان")payload.painter=d.target; if(d.type==="مقاول")payload.contractor=d.target; if(d.type==="مشروع")payload.project=d.target;
-        const res=await db.from("visits").insert([payload]); setSaving(false);
-        if(res.error){alert("خطأ: "+res.error.message);return;}
+        const res=await db.from("visits").insert([payload]); 
+        if(res.error){setSaving(false);alert("خطأ: "+res.error.message);return;}
+        await syncVisit(payload); setSaving(false);
         logActivity("إضافة","visits","الزيارات",d.target); onSaved&&onSaved(); onClose();
       }
-      return (<div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3" onClick={onClose}>
-        <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-md "+cCard}>
-          <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2 font-bold"><Icon n="bolt" s={16} c={cAccent}/> زيارة ميدانية سريعة</div><button onClick={onClose} className={cMuted}><Icon n="close" s={18}/></button></div>
-          <div className="space-y-3">
-            <Inp label="الجهة / الاسم" v={d.target} on={v=>setD({...d,target:v})}/>
-            <Sel label="نوع الزيارة" v={d.type} on={v=>setD({...d,type:v})} opts={VISIT_TYPES}/>
+      return (<div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-3" onClick={onClose}>
+        <div dir="rtl" onClick={e=>e.stopPropagation()} className={"w-full max-w-md max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-5 pop "+cCard}>
+          <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2 font-extrabold"><span className="w-8 h-8 rounded-xl brand-grad text-white flex items-center justify-center"><Icon n="bolt" s={16}/></span> زيارة ميدانية سريعة</div><button onClick={onClose} className={cMuted}><Icon n="close" s={20}/></button></div>
+          {/* نوع الزيارة كأزرار كبيرة */}
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {VISIT_TYPES.map(t=>{ const col=STATUS_COLORS[t]||"#4F46E5"; const on=d.type===t;
+              return (<button key={t} onClick={()=>setD({...d,type:t,target:""})} className={"rounded-2xl py-2.5 flex flex-col items-center gap-1 text-xs font-bold transition lift "+(on?"text-white shadow-md":cTrack+" "+cMuted)} style={on?{background:col}:{}}><Icon n={VISIT_ICON[t]||"pin"} s={18}/>{t}</button>);})}
+          </div>
+          {/* الجهة مع اقتراحات سريعة */}
+          <label className="block mb-2"><span className={"text-xs font-bold "+cMuted}>الجهة / الاسم</span>
+            <input value={d.target} onChange={e=>setD({...d,target:e.target.value})} placeholder="اكتب أو اختر من الأسفل" className={"w-full rounded-xl px-3 py-2.5 text-sm outline-none mt-1 "+cInput}/></label>
+          {matches.length>0&&<div className="flex flex-wrap gap-1.5 mb-3">{matches.map(n=><button key={n} onClick={()=>setD({...d,target:n})} className={"px-2.5 py-1 rounded-lg text-xs font-bold "+(d.target===n?cBtn:cTrack+" "+cMuted+" "+cHover)}>{n}</button>)}</div>}
+          {/* رصد المنتجات في الموقع (للمشاريع خصوصاً) */}
+          <div className="rounded-2xl p-3 mb-3 border border-indigo-100 dark:border-slate-700 bg-indigo-50/40 dark:bg-slate-800/40">
+            <FindingsField label="المنتجات المرصودة في الموقع" v={d.products} on={v=>setD({...d,products:v})}/>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
             <Inp label="النتيجة باختصار" v={d.results} on={v=>setD({...d,results:v})}/>
             <Inp label="موعد المتابعة القادمة" type="date" v={d.next_followup} on={v=>setD({...d,next_followup:v})}/>
             <ImagesField label="صور سريعة" v={imgs} on={setImgs} folder="visits"/>
             <div className={"text-xs flex items-center gap-1 "+cMuted}><Icon n="pin" s={13}/> {geo?`الموقع: ${geo.lat}, ${geo.lng}`:"جاري تحديد الموقع تلقائياً..."}</div>
           </div>
-          <button onClick={save} disabled={saving} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 disabled:opacity-50 "+cBtn}>{saving?"جاري الحفظ...":"حفظ الزيارة"}</button>
+          <button onClick={save} disabled={saving} className={"w-full rounded-2xl py-3 text-sm font-extrabold mt-4 disabled:opacity-50 "+cBtn}>{saving?"جاري الحفظ والتزامن...":"حفظ الزيارة وتزامنها"}</button>
         </div>
       </div>);
     }
@@ -713,44 +864,158 @@
       );
     }
 
-    /* ===== كتالوج المنتجات ===== */
+    /* ===== حساب الحصة السوقية (يقرأ المنتجات المرصودة في المشاريع والزيارات بالتزامن) ===== */
+    function computeMarketShare(projects, visits){
+      const all=[...(projects||[]),...(visits||[])];
+      const perFamily={};   // family -> {company -> count}
+      const overall={};     // company -> count
+      let total=0;
+      CATALOG.forEach(f=>perFamily[f.family]={});
+      all.forEach(rec=>{ parseFindings(rec.products).forEach(x=>{ const fam=x.f|| (PIDX[x.p]&&PIDX[x.p].family) ||"غير مصنّف"; const co=x.c||"أخرى (تجاري)";
+        if(!perFamily[fam]) perFamily[fam]={}; perFamily[fam][co]=(perFamily[fam][co]||0)+1; overall[co]=(overall[co]||0)+1; total++; }); });
+      return { perFamily, overall, total };
+    }
+
+    /* ===== تبويب المنتجات (كتالوج قابل للتعديل بالكامل) ===== */
     function ProductsPage() {
-      const [cat,setCat]=useState("الكل"); const [reco,setReco]=useState(Object.keys(RECO_MAP)[0]); const [sel,setSel]=useState(null);
-      const cats=["الكل",...new Set(PRODUCTS.map(p=>p.cat))];
-      const list=PRODUCTS.filter(p=>cat==="الكل"||p.cat===cat);
+      const [, force]=useState(0); const rerender=()=>force(x=>x+1);
+      const [openFam,setOpenFam]=useState(CATALOG[0]?CATALOG[0].id:null);
+      const [editor,setEditor]=useState(null); // {famId, idx|null, c, p}
+      const [famEditor,setFamEditor]=useState(null); // {idx|null, family, color, icon}
+      const [q,setQ]=useState("");
+      function saveProduct(){ const {famId,idx,c,p}=editor; if(!p.trim()||!c.trim()){alert("اكتب اسم المنتج والشركة");return;}
+        const next=JSON.parse(JSON.stringify(CATALOG)); const fam=next.find(f=>f.id===famId);
+        if(idx==null) fam.items.push({c:c.trim(),p:p.trim()}); else fam.items[idx]={c:c.trim(),p:p.trim()};
+        persistCatalog(next); setEditor(null); rerender(); }
+      function delProduct(famId,idx){ if(!confirm("حذف هذا المنتج؟"))return; const next=JSON.parse(JSON.stringify(CATALOG)); next.find(f=>f.id===famId).items.splice(idx,1); persistCatalog(next); rerender(); }
+      function saveFam(){ const {idx,family,color,icon}=famEditor; if(!family.trim()){alert("اكتب اسم العائلة");return;}
+        const next=JSON.parse(JSON.stringify(CATALOG));
+        if(idx==null) next.push({id:"f"+Date.now(),family:family.trim(),color,icon:icon||"layers",items:[]}); else { next[idx].family=family.trim(); next[idx].color=color; next[idx].icon=icon||next[idx].icon; }
+        persistCatalog(next); setFamEditor(null); rerender(); }
+      function delFam(idx){ if(!confirm("حذف العائلة وكل منتجاتها؟"))return; const next=JSON.parse(JSON.stringify(CATALOG)); next.splice(idx,1); persistCatalog(next); rerender(); }
+      function resetCatalog(){ if(!confirm("استرجاع الكتالوج الأصلي المستخرج من ملف الحصة السوقية؟ سيُلغى تعديلك."))return; persistCatalog(JSON.parse(JSON.stringify(DEFAULT_CATALOG))); rerender(); }
+
+      const ICONS=["layers","shield","brush","home","drop","umbrella","building","star"];
+      const PALETTE=["#0891B2","#16A34A","#7C3AED","#D97706","#2563EB","#DC2626","#9333EA","#DB2777","#EA580C","#0EA5E9"];
       return (
         <div className="space-y-4">
-          <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}>
-            <h3 className="font-bold text-sm mb-3">محرك التوصيات الذكي</h3>
-            <div className="flex flex-wrap gap-2 items-center">
-              <select value={reco} onChange={e=>setReco(e.target.value)} className={"rounded-lg px-3 py-2 text-xs font-bold outline-none "+cInput}>{Object.keys(RECO_MAP).map(k=><option key={k}>{k}</option>)}</select>
-              <span className={"text-xs "+cMuted}>المنتجات المقترحة:</span>
-              {RECO_MAP[reco].map(n=>(<button key={n} onClick={()=>setSel(PRODUCTS.find(p=>p.name===n))} className={"px-3 py-1.5 rounded-lg text-xs font-bold "+cBtn}>{n}</button>))}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">{cats.map(c=><button key={c} onClick={()=>setCat(c)} className={"px-3 py-1.5 rounded-lg text-xs font-bold "+(cat===c?cBtn:cCard+" "+cMuted)}>{c}</button>)}</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {list.map(p=>(
-              <button key={p.name} onClick={()=>setSel(p)} className={"rounded-2xl p-4 text-right relative overflow-hidden "+cCard+" "+cHover}>
-                <div className="absolute top-0 right-0 w-full h-1.5" style={{background:CAT_COLORS[p.cat]}}/>
-                <div className="flex justify-between items-start mt-1.5"><div className="font-bold">{p.name}</div><span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{color:CAT_COLORS[p.cat],background:CAT_COLORS[p.cat]+"1f"}}>{p.cat}</span></div>
-                <p className={"text-xs mt-2 leading-relaxed "+cMuted}>{p.desc}</p>
-              </button>
-            ))}
-          </div>
-          {sel&&(
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setSel(null)}>
-              <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 max-w-lg w-full max-h-[90vh] overflow-y-auto "+cCard}>
-                <div className="flex justify-between items-start mb-3"><div><h3 className="text-lg font-extrabold">{sel.name}</h3><span className="text-xs font-bold" style={{color:CAT_COLORS[sel.cat]}}>{sel.cat}</span></div><button onClick={()=>setSel(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
-                <p className="text-sm mb-4 leading-relaxed">{sel.desc}</p>
-                <div className="mb-3"><div className="text-xs font-bold mb-1.5" style={{color:"#16A34A"}}>الفوائد</div><div className="flex flex-wrap gap-1.5">{sel.benefits.map(x=><span key={x} className="text-xs px-2.5 py-1 rounded-full" style={{background:"#16A34A1f",color:"#16A34A"}}>{x}</span>)}</div></div>
-                <div className="mb-3"><div className="text-xs font-bold mb-1.5" style={{color:"#2563EB"}}>الاستخدامات</div><div className="flex flex-wrap gap-1.5">{sel.uses.map(x=><span key={x} className="text-xs px-2.5 py-1 rounded-full" style={{background:"#2563EB1f",color:"#2563EB"}}>{x}</span>)}</div></div>
-                <div><div className="text-xs font-bold mb-1.5" style={{color:"#DC2626"}}>المنتجات المنافسة</div><div className="flex flex-wrap gap-1.5">{sel.comp.map(x=><span key={x} className="text-xs px-2.5 py-1 rounded-full" style={{background:"#DC26261f",color:"#DC2626"}}>{x}</span>)}</div></div>
+          <div className={"p-5 text-white overflow-hidden relative brand-grad rounded-2xl"}>
+            <div className="absolute -left-6 -top-8 w-36 h-36 rounded-full bg-white/10"/>
+            <div className="relative flex items-center justify-between gap-3 flex-wrap">
+              <div><h2 className="font-extrabold text-lg">كتالوج المنتجات</h2><p className="text-xs text-white/85 mt-0.5">{CATALOG.length} عائلة · {CATALOG.reduce((a,f)=>a+f.items.length,0)} منتج · قابل للتعديل بالكامل</p></div>
+              <div className="flex gap-2">
+                <button onClick={()=>setFamEditor({idx:null,family:"",color:PALETTE[0],icon:"layers"})} className="bg-white/20 hover:bg-white/30 rounded-xl px-3 py-2 text-xs font-bold flex items-center gap-1.5"><Icon n="plus" s={14}/> عائلة</button>
+                <button onClick={resetCatalog} className="bg-white/20 hover:bg-white/30 rounded-xl px-3 py-2 text-xs font-bold">استرجاع الأصلي</button>
               </div>
             </div>
-          )}
+          </div>
+          <div className={"flex items-center gap-2 rounded-2xl px-3 py-2 "+cInput}><Icon n="search" s={16} c={cMuted}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="ابحث عن منتج أو شركة..." className="bg-transparent outline-none text-sm w-full"/></div>
+
+          {CATALOG.map((fam,fi)=>{ const items=fam.items.filter(it=>!q.trim()||(it.p+" "+it.c).includes(q.trim())); if(q.trim()&&items.length===0) return null; const open=openFam===fam.id||q.trim();
+            const byCo={}; items.forEach(it=>{ (byCo[it.c]=byCo[it.c]||[]).push(it); });
+            return (<div key={fam.id} className={"overflow-hidden "+cCard}>
+              <button onClick={()=>setOpenFam(open&&!q.trim()?null:fam.id)} className="w-full flex items-center justify-between gap-2 p-4 text-right">
+                <div className="flex items-center gap-3"><span className="w-10 h-10 rounded-xl text-white flex items-center justify-center shrink-0" style={{background:fam.color}}><Icon n={fam.icon} s={20}/></span>
+                  <div><div className="font-extrabold text-sm">{fam.family}</div><div className={"text-[11px] "+cMuted}>{fam.items.length} منتج · {new Set(fam.items.map(x=>x.c)).size} شركة</div></div></div>
+                <div className="flex items-center gap-1">
+                  <span onClick={e=>{e.stopPropagation();setFamEditor({idx:fi,family:fam.family,color:fam.color,icon:fam.icon});}} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"><Icon n="edit" s={15}/></span>
+                  <span onClick={e=>{e.stopPropagation();delFam(fi);}} className="p-1.5 rounded-lg hover:bg-red-50 text-red-400"><Icon n="trash" s={15}/></span>
+                  <Icon n="chevron" s={16} c={cMuted+(open?" rotate-90":"")}/>
+                </div>
+              </button>
+              {open&&(<div className="px-4 pb-4 space-y-3 fade">
+                {Object.keys(byCo).map(co=>(<div key={co}>
+                  <div className="flex items-center gap-1.5 mb-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{background:companyColor(co)}}/><span className="text-xs font-extrabold" style={{color:companyColor(co)}}>{co}{co===OWN_COMPANY?" ★ (شركتنا)":""}</span></div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {byCo[co].map(it=>{ const realIdx=fam.items.indexOf(it); const col=companyColor(co);
+                      return (<div key={realIdx} className="group flex items-center justify-between gap-1 rounded-xl px-2.5 py-2 text-xs font-bold" style={{background:col+"10",color:col,border:"1px solid "+col+"2e"}}>
+                        <span className="truncate">{it.p}</span>
+                        <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition">
+                          <button onClick={()=>setEditor({famId:fam.id,idx:realIdx,c:it.c,p:it.p})} className="p-1"><Icon n="edit" s={13}/></button>
+                          <button onClick={()=>delProduct(fam.id,realIdx)} className="p-1 text-red-500"><Icon n="trash" s={13}/></button>
+                        </span></div>);})}
+                  </div></div>))}
+                <button onClick={()=>setEditor({famId:fam.id,idx:null,c:OWN_COMPANY,p:""})} className={"w-full rounded-xl py-2 text-xs font-bold mt-1 "+cTrack+" "+cAccent+" "+cHover+" flex items-center justify-center gap-1.5"}><Icon n="plus" s={14}/> إضافة منتج لهذه العائلة</button>
+              </div>)}
+            </div>);})}
+
+          {editor&&(<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setEditor(null)}>
+            <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-sm pop "+cCard}>
+              <div className="flex items-center justify-between mb-4"><div className="font-bold">{editor.idx==null?"إضافة منتج":"تعديل منتج"}</div><button onClick={()=>setEditor(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
+              <div className="space-y-3">
+                <label className="block"><span className={"text-xs font-bold "+cMuted}>الشركة</span>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">{Object.keys(COMPANY_COLORS).map(c=>(<button key={c} onClick={()=>setEditor({...editor,c})} className="px-2.5 py-1 rounded-lg text-xs font-bold" style={editor.c===c?{background:companyColor(c),color:"#fff"}:{background:companyColor(c)+"18",color:companyColor(c)}}>{c}</button>))}</div></label>
+                <Inp label="اسم المنتج" v={editor.p} on={v=>setEditor({...editor,p:v})}/>
+              </div>
+              <button onClick={saveProduct} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 "+cBtn}>حفظ</button>
+            </div></div>)}
+
+          {famEditor&&(<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setFamEditor(null)}>
+            <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-sm pop "+cCard}>
+              <div className="flex items-center justify-between mb-4"><div className="font-bold">{famEditor.idx==null?"عائلة جديدة":"تعديل العائلة"}</div><button onClick={()=>setFamEditor(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
+              <div className="space-y-3">
+                <Inp label="اسم العائلة" v={famEditor.family} on={v=>setFamEditor({...famEditor,family:v})}/>
+                <div><span className={"text-xs font-bold "+cMuted}>اللون</span><div className="flex flex-wrap gap-1.5 mt-1.5">{PALETTE.map(c=><button key={c} onClick={()=>setFamEditor({...famEditor,color:c})} className="w-7 h-7 rounded-lg" style={{background:c,outline:famEditor.color===c?"2px solid #000":"none",outlineOffset:"2px"}}/>)}</div></div>
+                <div><span className={"text-xs font-bold "+cMuted}>الأيقونة</span><div className="flex flex-wrap gap-1.5 mt-1.5">{ICONS.map(ic=><button key={ic} onClick={()=>setFamEditor({...famEditor,icon:ic})} className={"w-9 h-9 rounded-lg flex items-center justify-center "+(famEditor.icon===ic?"text-white":cTrack+" "+cMuted)} style={famEditor.icon===ic?{background:famEditor.color}:{}}><Icon n={ic} s={16}/></button>)}</div></div>
+              </div>
+              <button onClick={saveFam} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 "+cBtn}>حفظ</button>
+            </div></div>)}
         </div>
       );
+    }
+
+    /* ===== تبويب الحصة السوقية ===== */
+    function MarketSharePage() {
+      const [data,setData]=useState(null); const [famSel,setFamSel]=useState("الكل");
+      useEffect(()=>{(async()=>{ const [pr,v]=await Promise.all([db.from("projects").select("*"),db.from("visits").select("*")]); setData({projects:pr.data||[],visits:v.data||[]}); })()},[]);
+      if(!data) return <div className={"text-center py-10 text-sm "+cMuted}>جاري حساب الحصة السوقية...</div>;
+      const ms=computeMarketShare(data.projects,data.visits);
+      const overallArr=Object.entries(ms.overall).map(([label,value])=>({label,value,color:companyColor(label)})).sort((a,b)=>b.value-a.value);
+      const ownShare=ms.total?Math.round((ms.overall[OWN_COMPANY]||0)/ms.total*100):0;
+      const rank=overallArr.findIndex(x=>x.label===OWN_COMPANY)+1;
+      const fams=ms.total===0?[]:CATALOG.filter(f=>famSel==="الكل"||f.family===famSel);
+      const Card=({children,cls=""})=>(<div className={"p-4 "+cCard+" "+cls}>{children}</div>);
+      const famShare=fam=>{ const m=ms.perFamily[fam.family]||{}; const tot=Object.values(m).reduce((a,b)=>a+b,0);
+        const arr=Object.entries(m).map(([label,value])=>({label,value,color:companyColor(label)})).sort((a,b)=>b.value-a.value); return {tot,arr}; };
+
+      if(ms.total===0) return (<div className="space-y-4">
+        <div className="p-5 text-white brand-grad rounded-2xl"><h2 className="font-extrabold text-lg">الحصة السوقية</h2><p className="text-xs text-white/85 mt-0.5">تُحسب آلياً من المنتجات المرصودة في زياراتك الميدانية</p></div>
+        <div className={"rounded-2xl p-10 text-center "+cCard}><div className={"text-sm "+cMuted}>لا توجد منتجات مرصودة بعد.</div><p className={"text-xs mt-2 "+cMuted}>سجّل المنتجات التي تجدها في المشاريع أثناء الزيارات الميدانية (عبر زر الزيارة السريعة ⚡) وستُحتسب الحصة تلقائياً.</p></div>
+      </div>);
+
+      return (<div className="space-y-4">
+        <div className="p-5 text-white brand-grad rounded-2xl relative overflow-hidden">
+          <div className="absolute -left-6 -top-8 w-40 h-40 rounded-full bg-white/10"/>
+          <div className="relative"><h2 className="font-extrabold text-lg">الحصة السوقية</h2><p className="text-xs text-white/85 mt-0.5">من {ms.total} رصدة منتج عبر {data.projects.length} مشروع و{data.visits.length} زيارة</p>
+            <div className="mt-3 flex items-center gap-4 flex-wrap">
+              <div><div className="text-3xl font-black">{ownShare}%</div><div className="text-xs text-white/80">حصة الجزيرة</div></div>
+              <div className="h-9 w-px bg-white/25"/>
+              <div><div className="text-3xl font-black">#{rank||"-"}</div><div className="text-xs text-white/80">ترتيب الجزيرة</div></div>
+            </div>
+          </div>
+        </div>
+
+        <Card><div className="text-sm font-bold mb-3 flex items-center gap-1.5"><Icon n="trophy" s={16} c={cAccent}/> الحصة الإجمالية بين الشركات</div>
+          <Donut data={overallArr} centerLabel="رصدة"/></Card>
+
+        <Card><div className="text-sm font-bold mb-3">ترتيب الشركات</div>
+          <div className="space-y-2.5">{overallArr.map((c,i)=>{ const pct=Math.round(c.value/ms.total*100); const own=c.label===OWN_COMPANY;
+            return (<div key={c.label} className={own?"rounded-xl p-2 -m-2 bg-indigo-50/60 dark:bg-indigo-900/20":""}>
+              <div className="flex justify-between mb-1 text-xs"><span className="font-bold flex items-center gap-1.5"><span className="w-5 h-5 rounded-md text-white text-[10px] flex items-center justify-center" style={{background:c.color}}>{i+1}</span>{c.label}{own?" ★":""}</span><span className="font-extrabold" style={{color:c.color}}>{pct}% · {c.value}</span></div>
+              <div className={"h-2.5 rounded-full overflow-hidden "+cTrack}><div className="h-2.5 rounded-full" style={{width:pct+"%",background:c.color}}/></div></div>);})}</div></Card>
+
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
+          {["الكل",...CATALOG.map(f=>f.family)].map(f=>(<button key={f} onClick={()=>setFamSel(f)} className={"shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold "+(famSel===f?cBtn:cTrack+" "+cMuted)}>{f}</button>))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {fams.map(fam=>{ const {tot,arr}=famShare(fam); if(tot===0) return (<Card key={fam.id}><div className="flex items-center gap-2 mb-2"><span className="w-7 h-7 rounded-lg text-white flex items-center justify-center" style={{background:fam.color}}><Icon n={fam.icon} s={15}/></span><div className="text-sm font-bold">{fam.family}</div></div><div className={"text-xs py-3 text-center "+cMuted}>لا رصدات بعد</div></Card>);
+            return (<Card key={fam.id}>
+              <div className="flex items-center gap-2 mb-3"><span className="w-7 h-7 rounded-lg text-white flex items-center justify-center" style={{background:fam.color}}><Icon n={fam.icon} s={15}/></span><div><div className="text-sm font-bold">{fam.family}</div><div className={"text-[11px] "+cMuted}>{tot} رصدة</div></div></div>
+              <div className="space-y-2">{arr.map(c=>{ const pct=Math.round(c.value/tot*100); const own=c.label===OWN_COMPANY;
+                return (<div key={c.label}><div className="flex justify-between text-[11px] mb-0.5"><span className={own?"font-extrabold":"font-semibold"}>{c.label}{own?" ★":""}</span><span className="font-bold" style={{color:c.color}}>{pct}%</span></div><div className={"h-2 rounded-full overflow-hidden "+cTrack}><div className="h-2 rounded-full" style={{width:pct+"%",background:c.color}}/></div></div>);})}</div>
+            </Card>);})}
+        </div>
+      </div>);
     }
 
     /* ===== الرؤى الذكية ===== */
@@ -777,7 +1042,7 @@
       d.visits.forEach(v=>{const c=CITIES.find(x=>String(v.location||"").includes(x)); if(c)cityScore[c]=(cityScore[c]||0)+1;});
       const leastCities=Object.entries(cityScore).map(([city,n])=>({city,n})).sort((a,b)=>a.n-b.n).slice(0,5);
       // المنتجات الأقل استخداماً
-      const prodCount={}; PRODUCT_NAMES.forEach(n=>prodCount[n]=0);
+      const prodCount={}; Object.keys(PIDX).forEach(n=>prodCount[n]=0);
       [...d.visits,...d.projects].forEach(x=>splitProducts(x.products).forEach(n=>{if(n in prodCount)prodCount[n]++;}));
       const leastProducts=Object.entries(prodCount).sort((a,b)=>a[1]-b[1]).slice(0,6);
 
@@ -876,6 +1141,22 @@
         body+="<h2>رصد المنافسين</h2>"+tableHtml(["المنافس","المنتج","السعر","نقاط القوة","نقاط الضعف","المشروع"],rows);
         printReport("تقرير المنافسين", body);
       }
+      function marketReport(){ if(!data)return; const ms=computeMarketShare(data.projects,data.visits);
+        if(ms.total===0){ alert("لا توجد منتجات مرصودة بعد لحساب الحصة السوقية."); return; }
+        const overall=Object.entries(ms.overall).sort((a,b)=>b[1]-a[1]);
+        const ownPct=Math.round((ms.overall[OWN_COMPANY]||0)/ms.total*100);
+        const rank=overall.findIndex(x=>x[0]===OWN_COMPANY)+1;
+        // أشرطة ملوّنة للحصة الإجمالية
+        const barRow=(label,val)=>{ const pct=Math.round(val/ms.total*100); const col=companyColor(label); const own=label===OWN_COMPANY;
+          return `<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><b style="${own?'color:'+col:''}">${label}${own?' ★':''}</b><b style="color:${col}">${pct}% · ${val}</b></div><div style="height:12px;border-radius:7px;background:#eef2f7;overflow:hidden"><div style="height:12px;width:${pct}%;background:${col};border-radius:7px"></div></div></div>`; };
+        let body=kpisHtml([["حصة الجزيرة",ownPct+"%"],["ترتيب الجزيرة","#"+(rank||"-")],["إجمالي الرصدات",ms.total],["عدد الشركات",overall.length]]);
+        body+="<h2>الحصة الإجمالية بين الشركات</h2>"+overall.map(([l,v])=>barRow(l,v)).join("");
+        // جداول لكل عائلة
+        CATALOG.forEach(fam=>{ const m=ms.perFamily[fam.family]||{}; const tot=Object.values(m).reduce((a,b)=>a+b,0); if(!tot) return;
+          const rows=Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([c,v])=>[c+(c===OWN_COMPANY?" ★":""),v,Math.round(v/tot*100)+"%"]);
+          body+=`<h2 style="border-right-color:${fam.color};color:${fam.color}">${fam.family} (${tot} رصدة)</h2>`+tableHtml(["الشركة","عدد الرصدات","الحصة"],rows); });
+        printReport("تقرير الحصة السوقية", body);
+      }
 
       async function dl(id){ const {data:d}=await db.from(CONFIG[id].table).select("*"); exportCSV(CONFIG[id],d||[]); }
       const counts=data?Object.fromEntries(Object.keys(CONFIG).map(id=>[id,(data[CONFIG[id].table]||[]).length])):null;
@@ -898,6 +1179,7 @@
               <button onClick={paintersReport} className={repBtn}>نشاط الدهانين</button>
               <button onClick={projectsReport} className={repBtn}>تقرير المشاريع</button>
               <button onClick={competitorsReport} className={repBtn}>تقرير المنافسين</button>
+              <button onClick={marketReport} className={repBtn+" !text-white"} style={{background:"linear-gradient(135deg,#4f46e5,#7c3aed)"}}><Icon n="trophy" s={14}/> الحصة السوقية</button>
             </div>
             <p className={"text-xs mt-3 "+cMuted}>يفتح التقرير في نافذة جديدة منسّقة، استخدم "طباعة / حفظ PDF" لحفظه.</p>
           </div>
@@ -911,7 +1193,7 @@
     }
 
     /* ===== التطبيق ===== */
-    const NAV=[["dashboard","اللوحة الرئيسية"],["tasks","مهامي اليوم"],["painters","الدهانين"],["projects","المشاريع"],["contractors","المقاولون"],["visits","الزيارات"],["trainings","التدريبات"],["competitors","المنافسون"],["products","المنتجات"],["insights","رؤى ذكية"],["timeline","سجل النشاط"],["reports","التقارير"]];
+    const NAV=[["dashboard","اللوحة الرئيسية"],["tasks","مهامي اليوم"],["painters","الدهانين"],["projects","المشاريع"],["contractors","المقاولون"],["visits","الزيارات"],["trainings","التدريبات"],["competitors","المنافسون"],["products","المنتجات"],["marketshare","الحصة السوقية"],["insights","رؤى ذكية"],["timeline","سجل النشاط"],["reports","التقارير"]];
     const TITLES=Object.fromEntries(NAV);
 
     function App() {
@@ -919,6 +1201,7 @@
       const [sideOpen,setSideOpen]=useState(false); const [notifOpen,setNotifOpen]=useState(false);
       const [gq,setGq]=useState(""); const [results,setResults]=useState([]); const [notifs,setNotifs]=useState([]);
       const [quickOpen,setQuickOpen]=useState(false); const [prefill,setPrefill]=useState(null);
+      const [notifOn,setNotifOn]=useState(notifEnabled());
 
       useEffect(()=>{ document.documentElement.classList.toggle("dark",dark); },[dark]);
       async function loadNotifs(){
@@ -931,7 +1214,25 @@
         (t.data||[]).filter(x=>x.date&&x.date>=today).forEach(x=>list.push({level:"mid",title:"تدريب قادم",text:`${x.name} — ${x.date}`}));
         setNotifs(list);
       }
-      useEffect(()=>{ loadNotifs(); },[]);
+      // إطلاق إشعارات الجوال للمهام المستحقّة + فحص دوري
+      function pushPhoneNotifications(){ if(!notifEnabled()) return;
+        const today=TODAY();
+        Promise.all([db.from("painters").select("name,next_followup,followup_status"),db.from("projects").select("name,next_followup,followup_status,status,win_prob,risk_level"),db.from("contractors").select("name,next_followup,followup_status"),db.from("trainings").select("name,date")]).then(([p,pr,c,t])=>{
+          const due=[...(p.data||[]),...(pr.data||[]),...(c.data||[])].filter(x=>x.next_followup&&x.next_followup<=today&&x.followup_status!=="تمت"&&x.followup_status!=="ملغاة");
+          if(due.length){ const overdue=due.filter(x=>x.next_followup<today).length;
+            fireNotification("📋 مهامك الميدانية اليوم", `لديك ${due.length} متابعة مستحقّة${overdue?` · منها ${overdue} متأخرة` : ""}.`, "tasks-due"); }
+          (t.data||[]).filter(x=>x.date===today).forEach(x=>fireNotification("🎓 تدريب اليوم", x.name, "training-"+x.name));
+          (pr.data||[]).filter(x=>x.status==="قيد المتابعة"&&((Number(x.win_prob)||0)<50||x.risk_level==="عالي"||x.risk_level==="حرج")).slice(0,1).forEach(x=>fireNotification("⚠️ مشروع معرّض للخسارة", `${x.name} — احتمالية الفوز ${x.win_prob||0}%`, "risk"));
+        }).catch(()=>{});
+      }
+      useEffect(()=>{ loadNotifs(); cloudLoadCatalog();
+        const run=()=>pushPhoneNotifications();
+        const t=setTimeout(run,3000);                       // عند الفتح
+        const iv=setInterval(run, 30*60*1000);               // كل نصف ساعة أثناء فتح التطبيق
+        const onVis=()=>{ if(document.visibilityState==="visible") run(); };
+        document.addEventListener("visibilitychange",onVis);
+        return ()=>{ clearTimeout(t); clearInterval(iv); document.removeEventListener("visibilitychange",onVis); };
+      },[]);
       useEffect(()=>{ if(gq.trim().length<2){setResults([]);return;} const tm=setTimeout(async()=>{
         const [p,pr,c]=await Promise.all([db.from("painters").select("id,name").ilike("name","%"+gq+"%").limit(5),db.from("projects").select("id,name").ilike("name","%"+gq+"%").limit(5),db.from("contractors").select("id,name").ilike("name","%"+gq+"%").limit(5)]);
         const r=[]; (p.data||[]).forEach(x=>r.push({t:"دهان",n:x.name,go:"painters"})); (pr.data||[]).forEach(x=>r.push({t:"مشروع",n:x.name,go:"projects"})); (c.data||[]).forEach(x=>r.push({t:"مقاول",n:x.name,go:"contractors"})); setResults(r);
@@ -970,7 +1271,9 @@
                 <button onClick={()=>setQuickOpen(true)} title="زيارة سريعة" className="p-2 rounded-xl bg-white/10 hover:bg-white/20"><Icon n="bolt"/></button>
                 <div className="relative">
                   <button onClick={()=>setNotifOpen(!notifOpen)} className="p-2 rounded-xl hover:bg-white/10 relative"><Icon n="bell"/>{highCount>0&&<span className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{highCount}</span>}</button>
-                  {notifOpen&&(<div className={"absolute top-full left-0 mt-1 w-72 rounded-2xl shadow-xl overflow-hidden z-30 text-gray-800 dark:text-slate-100 "+cCard}><div className={"p-3 font-bold text-xs border-b "+cBorder}>الإشعارات الذكية</div><div className="max-h-72 overflow-y-auto">{notifs.length===0?<div className={"p-3 text-xs "+cMuted}>لا توجد تنبيهات</div>:notifs.map((n,i)=>(<div key={i} className={"p-3 border-b flex gap-2 "+cBorder}><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{background:n.level==="high"?"#DC2626":"#D97706"}}/><div><div className="text-xs font-bold">{n.title}</div><div className={"text-xs "+cMuted}>{n.text}</div></div></div>))}</div></div>)}
+                  {notifOpen&&(<div className={"absolute top-full left-0 mt-1 w-72 rounded-2xl shadow-xl overflow-hidden z-30 text-gray-800 dark:text-slate-100 "+cCard}><div className={"p-3 font-bold text-xs border-b flex items-center justify-between "+cBorder}><span>الإشعارات الذكية</span></div>
+                    <div className={"p-2.5 border-b "+cBorder}>{notifOn?<div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600"><Icon n="check" s={14}/> تنبيهات الجوال مفعّلة</div>:<button onClick={async()=>{ if(await enableNotifications()){ setNotifOn(true); pushPhoneNotifications(); } }} className={"w-full rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 "+cBtn}><Icon n="bell" s={14}/> تفعيل تنبيهات الجوال</button>}</div>
+                    <div className="max-h-72 overflow-y-auto">{notifs.length===0?<div className={"p-3 text-xs "+cMuted}>لا توجد تنبيهات</div>:notifs.map((n,i)=>(<div key={i} className={"p-3 border-b flex gap-2 "+cBorder}><span className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{background:n.level==="high"?"#DC2626":"#D97706"}}/><div><div className="text-xs font-bold">{n.title}</div><div className={"text-xs "+cMuted}>{n.text}</div></div></div>))}</div></div>)}
                 </div>
                 <button onClick={()=>setDark(!dark)} className="p-2 rounded-xl hover:bg-white/10"><Icon n={dark?"sun":"moon"}/></button>
               </div>
@@ -978,7 +1281,8 @@
             <main className="p-4 max-w-5xl mx-auto">
               {tab==="dashboard"&&<Dashboard key="dash" onGo={go}/>}
               {tab==="tasks"&&<TasksToday key="tasks" onGo={go}/>}
-              {tab==="products"&&<ProductsPage/>}
+              {tab==="products"&&<ProductsPage key="prod"/>}
+              {tab==="marketshare"&&<MarketSharePage key="ms"/>}
               {tab==="insights"&&<InsightsPage key="ins" onGo={go}/>}
               {tab==="timeline"&&<Timeline key="tl"/>}
               {tab==="reports"&&<ReportsPage key="rep"/>}
