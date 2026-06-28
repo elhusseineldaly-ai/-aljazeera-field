@@ -491,7 +491,7 @@ const DEFAULT_CATALOG = [
           <div className="flex items-center gap-2"><span className={"text-xs "+cMuted}>التصنيف التلقائي:</span><Pill text={rating} color={RATING_COLORS[rating]}/></div>
           <div className="grid grid-cols-3 gap-2">{cells.map(([l,val])=>(<div key={l} className={"rounded-xl p-2.5 "+cTrack}><div className={"text-[11px] "+cMuted}>{l}</div><div className="text-sm font-bold mt-0.5 truncate">{val}</div></div>))}</div>
           <div><div className="text-xs font-bold mb-1.5">المنتجات المستخدمة/المفضلة</div>{used.length?<div className="flex flex-wrap gap-1.5">{used.map(n=><Pill key={n} text={n} color={fav.includes(n)?"#7C3AED":"#0891B2"}/>)}</div>:<div className={"text-xs "+cMuted}>لم تُسجَّل منتجات بعد</div>}</div>
-          <Row title="مواقع هذا الدهان" items={projects} sub={x=>`${x.status||""} · ${Number(x.value||0).toLocaleString()} ر.س`} go="projects"/>
+          <Row title="مواقع هذا الدهان" items={projects} sub={x=>`${x.type||""} · ${x.city||""}`} go="projects"/>
           <Row title="زيارات مرتبطة" items={visits} sub={x=>`${x.type||""} · ${x.date||""}`} go="visits"/>
         </div>);
       }
@@ -779,7 +779,7 @@ const DEFAULT_CATALOG = [
       const today=TODAY();
       const tasks=[];
       const push=(tbl,r,label)=>{ if(r.next_followup && r.followup_status!=="تمت" && r.followup_status!=="ملغاة") tasks.push({tbl,id:r.id,name:r.name,date:r.next_followup,city:r.city,prio:r.priority,label}); };
-      d.painters.forEach(r=>push("painters",r,"دهان")); d.projects.forEach(r=>push("projects",r,"مشروع")); d.contractors.forEach(r=>push("contractors",r,"مقاول"));
+      d.painters.forEach(r=>push("painters",r,"دهان")); d.projects.forEach(r=>push("projects",r,"موقع")); d.contractors.forEach(r=>push("contractors",r,"مطور عقاري"));
       const overdue=tasks.filter(t=>t.date<today).sort((a,b)=>a.date.localeCompare(b.date));
       const dueToday=tasks.filter(t=>t.date===today);
       const upcoming=tasks.filter(t=>t.date>today).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,20);
@@ -796,7 +796,7 @@ const DEFAULT_CATALOG = [
         </div>
       );
       return (<div className="space-y-4">
-        <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}><h2 className="font-extrabold">مهامي اليوم</h2><p className={"text-xs mt-0.5 "+cMuted}>كل المتابعات المستحقّة عبر الدهانين والمشاريع والمقاولين · {new Date().toLocaleDateString("ar")}</p></div>
+        <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}><h2 className="font-extrabold">مهامي اليوم</h2><p className={"text-xs mt-0.5 "+cMuted}>كل المتابعات المستحقّة عبر الدهانين والمواقع والمطوّرين العقاريين · {new Date().toLocaleDateString("ar")}</p></div>
         <div className="grid grid-cols-3 gap-3">
           <Kpi label="متأخرة" value={overdue.length} color="#DC2626"/>
           <Kpi label="مستحقة اليوم" value={dueToday.length} color="#D97706"/>
@@ -832,55 +832,45 @@ const DEFAULT_CATALOG = [
     function Dashboard({ onGo }) {
       const [d,setD]=useState(null);
       useEffect(()=>{(async()=>{
-        const [p,pr,c,v,t,co]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*"),db.from("competitors").select("*")]);
-        setD({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[],competitors:co.data||[]});
+        const [p,pr,c,v,t]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*")]);
+        setD({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[]});
       })()},[]);
       if(!d) return <div className={"text-center py-10 text-sm "+cMuted}>جاري تحميل اللوحة...</div>;
-      const {painters,projects,contractors,visits,trainings,competitors}=d;
+      const {painters,projects,contractors,visits,trainings}=d;
       const group=(arr,key)=>{const m={};arr.forEach(x=>{const k=x[key]||"غير محدد";m[k]=(m[k]||0)+1;});return Object.entries(m).map(([label,value])=>({label,value}));};
       const sortTop=(arr,n=6)=>arr.sort((a,b)=>b.value-a.value).slice(0,n);
 
       // أداء المعارض والمدن
       const byShowroom=sortTop(group(painters,"showroom"));
       const byCity=sortTop(group(painters,"city"));
-      // أداء المشاريع بقيمة لكل مدينة
-      const projValByCity={}; projects.forEach(p=>{const k=p.city||"غير محدد"; projValByCity[k]=(projValByCity[k]||0)+(Number(p.value)||0);});
-      const cityValue=sortTop(Object.entries(projValByCity).map(([label,value])=>({label,value})));
-      // أفضل الدهانين (مشاريع + تقييم)
+      // المواقع والزيارات حسب المدينة
+      const sitesByCity=sortTop(group(projects,"city"));
+      const visitsByCity=sortTop(group(visits,"location"));
+      const citiesCovered=new Set(visits.map(v=>v.location).filter(Boolean)).size;
+      // أفضل الدهانين (مواقع + تقييم)
       const projByPainter={}; projects.forEach(p=>{if(p.painter)projByPainter[p.painter]=(projByPainter[p.painter]||0)+1;});
       const topPainters=sortTop(painters.map(p=>({label:p.name,value:(projByPainter[p.name]||0)*2+(Number(p.rating)||0)})).filter(x=>x.value>0),6);
-      // أفضل المقاولين
+      // أفضل المطوّرين
       const topContractors=sortTop(contractors.map(c=>({label:c.name,value:Number(c.projects_count)||0})).filter(x=>x.value>0),6);
-      // أكثر منتجات الجزيرة رصداً
-      const prodCount={}; [...visits,...projects].forEach(x=>parseFindings(x.products).forEach(f=>{ if(f.c===OWN_COMPANY) prodCount[f.p]=(prodCount[f.p]||0)+1; }));
+      // الرصدات: منتجات الجزيرة مقابل المنافسين
+      let ownFind=0, compTot=0; const prodCount={}; const compFind={};
+      [...visits,...projects].forEach(x=>parseFindings(x.products).forEach(f=>{ if(!f.c) return; if(f.c===OWN_COMPANY){prodCount[f.p]=(prodCount[f.p]||0)+1; ownFind++;} else {compFind[f.c]=(compFind[f.c]||0)+1; compTot++;} }));
       const topProducts=sortTop(Object.entries(prodCount).map(([label,value])=>({label,value})),8);
-      // أكثر المنافسين ظهوراً — من المنتجات المرصودة فعلياً في المواقع
-      const compFind={}; [...visits,...projects].forEach(x=>parseFindings(x.products).forEach(f=>{ if(f.c&&f.c!==OWN_COMPANY) compFind[f.c]=(compFind[f.c]||0)+1; }));
       const compCount=sortTop(Object.entries(compFind).map(([label,value])=>({label,value,color:companyColor(label)})),8);
+      const totalFindings=ownFind+compTot;
+      const ownShare=totalFindings?Math.round(ownFind/totalFindings*100):0;
+      const marketDonut=totalFindings?[{label:"الجزيرة",value:ownFind,color:companyColor(OWN_COMPANY)},{label:"المنافسون",value:compTot,color:"#DC2626"}]:[];
       // متابعات الدهانين حسب الطريقة
       const cmCount=group(painters.filter(p=>p.contact_method),"contact_method").map(x=>({...x,color:STATUS_COLORS[x.label]||"#64748B"})).sort((a,b)=>b.value-a.value);
       const followedPainters=painters.filter(p=>p.contact_method).length;
-
-      // توزيع حالات المشاريع والدهانين (Donut)
-      const projStatusData=group(projects,"status").map(x=>({label:x.label,value:x.value,color:STATUS_COLORS[x.label]||"#64748B"})).sort((a,b)=>b.value-a.value);
+      // توزيع الدهانين حسب الحالة (Donut)
       const painterStatusData=group(painters,"status").map(x=>({label:x.label,value:x.value,color:STATUS_COLORS[x.label]||"#64748B"})).sort((a,b)=>b.value-a.value);
-      // قيمة الفرص حسب المدينة (Donut بالألوان)
-      const cityValueDonut=cityValue.slice(0,6).map((x,i)=>({...x,color:COLORS[i%COLORS.length]}));
-      // مسار تحويل المشاريع (Funnel)
-      const st=s=>projects.filter(p=>p.status===s).length;
-      const funnel=[
-        {label:"فرص جديدة",value:st("فرصة"),color:"#2563EB"},
-        {label:"قيد المتابعة",value:st("قيد المتابعة"),color:"#D97706"},
-        {label:"تم الفوز",value:st("تم الفوز"),color:"#16A34A"},
-      ];
-      const won=st("تم الفوز"), lost=st("تمت الخسارة"), decided=won+lost;
-      const winRate=decided?Math.round(won/decided*100):0;
+      // المواقع حسب المدينة (Donut)
+      const sitesCityDonut=sitesByCity.slice(0,6).map((x,i)=>({...x,color:COLORS[i%COLORS.length]}));
       // نشاط الزيارات آخر 6 أشهر (Trend)
       const months=[]; const now=new Date();
       for(let i=5;i>=0;i--){ const dt=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({key:dt.toISOString().slice(0,7),label:dt.toLocaleDateString("ar",{month:"short"})}); }
       const visTrend=months.map(m=>({label:m.label,value:visits.filter(v=>String(v.date||"").slice(0,7)===m.key).length}));
-      const totalOpp=projects.reduce((a,p)=>a+(Number(p.value)||0),0);
-      const totalRev=projects.reduce((a,p)=>a+(Number(p.expected_revenue)||0),0);
 
       const recentVisits=[...visits].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,5);
       const empty=<div className={"text-xs py-6 text-center "+cMuted}>لا بيانات كافية بعد</div>;
@@ -892,16 +882,16 @@ const DEFAULT_CATALOG = [
             <Kpi label="الدهانين" value={painters.length} color="#4F46E5" icon="brush"/>
             <Kpi label="النشطون" value={painters.filter(p=>p.status==="نشط").length} color="#16A34A" icon="check"/>
             <Kpi label="المواقع" value={projects.length} color="#D97706" icon="building"/>
-            <Kpi label="مواقع مكتسبة" value={won} color="#0891B2" icon="trophy"/>
             <Kpi label="المطوّرون" value={contractors.length} color="#7C3AED" icon="target"/>
             <Kpi label="الزيارات" value={visits.length} color="#2563EB" icon="pin"/>
+            <Kpi label="مدن مغطّاة" value={citiesCovered+" / "+CITIES.length} color="#0891B2" icon="pin"/>
             <Kpi label="متابَعون" value={followedPainters} color="#DB2777" icon="link" sub="دهانون تمّت متابعتهم"/>
-            <Kpi label="قيمة الفرص" value={totalOpp.toLocaleString()+" ر.س"} color="#0EA5E9" icon="chart"/>
+            <Kpi label="حصة الجزيرة" value={ownShare+"%"} color="#0EA5E9" icon="trophy" sub={totalFindings+" رصدة"}/>
           </div>
 
           {/* رسوم التوزيع الحلقية */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Card title="المواقع حسب الحالة">{projStatusData.length?<Donut data={projStatusData} centerLabel="موقع"/>:empty}</Card>
+            <Card title="المواقع حسب المدينة">{sitesCityDonut.length?<Donut data={sitesCityDonut} centerLabel="موقع"/>:empty}</Card>
             <Card title="الدهانين حسب الحالة">{painterStatusData.length?<Donut data={painterStatusData} centerLabel="دهان"/>:empty}</Card>
           </div>
 
@@ -910,12 +900,12 @@ const DEFAULT_CATALOG = [
             {visits.length?<TrendArea points={visTrend} color="#4F46E5"/>:empty}
           </Card>
 
-          {/* قمع التحويل + قيمة الفرص حسب المدينة */}
+          {/* الحصة السوقية + تغطية المدن بالزيارات */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Card title="مسار تحويل المواقع">
-              {projects.length?<><Funnel stages={funnel}/><div className={"mt-3 pt-3 border-t flex items-center justify-between text-xs "+cBorder}><span className={cMuted}>معدل الفوز من المحسوم ({decided})</span><span className="font-extrabold" style={{color:winRate>=50?"#16A34A":"#DC2626"}}>{winRate}%</span></div></>:empty}
+            <Card title="حصة الجزيرة مقابل المنافسين" sub="من المنتجات المرصودة">
+              {marketDonut.length?<><Donut data={marketDonut} size={148} centerLabel="رصدة"/><div className={"mt-3 pt-3 border-t flex items-center justify-between text-xs "+cBorder}><span className={cMuted}>حصة الجزيرة من {totalFindings} رصدة</span><span className="font-extrabold" style={{color:ownShare>=50?"#16A34A":"#DC2626"}}>{ownShare}%</span></div></>:empty}
             </Card>
-            <Card title="قيمة الفرص حسب المدينة">{cityValueDonut.length&&totalOpp>0?<Donut data={cityValueDonut} size={148} centerLabel="ر.س"/>:empty}</Card>
+            <Card title="تغطية المدن بالزيارات" sub="زيارات لكل مدينة">{visitsByCity.length?<Bars data={visitsByCity}/>:empty}</Card>
           </div>
 
           {/* لوحات الأداء (شريطية) */}
@@ -1172,28 +1162,34 @@ const DEFAULT_CATALOG = [
     function InsightsPage({ onGo }) {
       const [d,setD]=useState(null);
       useEffect(()=>{(async()=>{
-        const [p,pr,v,co]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("visits").select("*"),db.from("competitors").select("*")]);
-        setD({painters:p.data||[],projects:pr.data||[],visits:v.data||[],competitors:co.data||[]});
+        const [p,pr,v]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("visits").select("*")]);
+        setD({painters:p.data||[],projects:pr.data||[],visits:v.data||[]});
       })()},[]);
       if(!d) return <div className={"text-center py-10 text-sm "+cMuted}>جاري تحليل البيانات...</div>;
       const today=TODAY();
       const withF=d.painters.filter(p=>p.next_followup&&p.followup_status!=="تمت");
       const overdue=withF.filter(p=>p.next_followup<today).sort((a,b)=>a.next_followup.localeCompare(b.next_followup));
-      const atRisk=d.projects.filter(p=>p.status==="قيد المتابعة"&&((Number(p.win_prob)||0)<50||p.risk_level==="عالي"||p.risk_level==="حرج")).sort((a,b)=>(Number(b.value)||0)-(Number(a.value)||0));
       const competitorP=d.painters.filter(p=>p.status==="منافس");
       const notContacted=d.painters.filter(p=>p.status!=="متوقف"&&daysAgo(p.last_visit||p.last_contact)>45);
       const active=d.painters.filter(p=>p.status==="نشط").length;
-      // مشاريع عالية القيمة غير المزارة
-      const visitedProjects=new Set(d.visits.map(v=>v.project).filter(Boolean));
-      const highValueUnvisited=d.projects.filter(p=>(Number(p.value)||0)>=100000&&!visitedProjects.has(p.name)&&p.status!=="تم الفوز"&&p.status!=="تمت الخسارة").sort((a,b)=>(Number(b.value)||0)-(Number(a.value)||0));
-      // المدن الأقل نشاطاً (أقل دهانين+زيارات)
+      // مواقع بلا دهان مسؤول (فرصة ربط)
+      const sitesNoPainter=d.projects.filter(p=>!p.painter||p.painter==="-"||p.painter==="");
+      // المدن الأقل تغطية (دهانون + زيارات لكل مدينة)
       const cityScore={}; CITIES.forEach(c=>cityScore[c]=0);
-      d.painters.forEach(p=>{if(p.city)cityScore[p.city]=(cityScore[p.city]||0)+1;});
-      d.visits.forEach(v=>{const c=CITIES.find(x=>String(v.location||"").includes(x)); if(c)cityScore[c]=(cityScore[c]||0)+1;});
+      d.painters.forEach(p=>{if(cityScore[p.city]!=null)cityScore[p.city]+=1;});
+      d.visits.forEach(v=>{if(cityScore[v.location]!=null)cityScore[v.location]+=1;});
       const leastCities=Object.entries(cityScore).map(([city,n])=>({city,n})).sort((a,b)=>a.n-b.n).slice(0,5);
-      // المنتجات الأقل استخداماً
-      const prodCount={}; Object.keys(PIDX).forEach(n=>prodCount[n]=0);
-      [...d.visits,...d.projects].forEach(x=>splitProducts(x.products).forEach(n=>{if(n in prodCount)prodCount[n]++;}));
+      // حصة الجزيرة لكل مدينة من المنتجات المرصودة — المدن التي يتفوّق فيها المنافسون (فرص استرداد)
+      const cityShare={}; CITIES.forEach(c=>cityShare[c]={own:0,tot:0});
+      const addRec=(city,prods)=>{ if(cityShare[city]==null) return; parseFindings(prods).forEach(f=>{ if(!f.c) return; cityShare[city].tot++; if(f.c===OWN_COMPANY)cityShare[city].own++; }); };
+      d.projects.forEach(p=>addRec(p.city,p.products));
+      d.visits.forEach(v=>addRec(v.location,v.products));
+      const competitorCities=Object.entries(cityShare).map(([city,o])=>({city,share:o.tot?Math.round(o.own/o.tot*100):null,tot:o.tot}))
+        .filter(x=>x.tot>=3&&x.share!=null&&x.share<50).sort((a,b)=>a.share-b.share);
+      // المنتجات (الجزيرة) الأقل رصداً
+      const prodCount={};
+      [...d.visits,...d.projects].forEach(x=>parseFindings(x.products).forEach(f=>{ if(f.c===OWN_COMPANY) prodCount[f.p]=(prodCount[f.p]||0)+1; }));
+      Object.keys(PIDX||{}).forEach(()=>{});
       const leastProducts=Object.entries(prodCount).sort((a,b)=>a[1]-b[1]).slice(0,6);
 
       const card="rounded-2xl p-4 "+cCard;
@@ -1201,25 +1197,25 @@ const DEFAULT_CATALOG = [
         <div className={card}><div className="flex items-center justify-between mb-3"><div className="text-sm font-bold" style={{color}}>{title} ({items.length})</div>{go&&<button onClick={()=>onGo&&onGo(go)} className={"text-xs font-bold "+cAccent}>عرض</button>}</div>
           {items.length?<div className="space-y-2">{items.slice(0,8).map((x,i)=>render(x,i))}</div>:<div className={"text-xs "+cMuted}>{empty}</div>}</div>
       );
-      const line=(a,b)=>(<div className={"flex items-center justify-between gap-2 border-b pb-2 "+cBorder}><div className="text-sm font-semibold truncate">{a}</div><div className={"text-xs truncate "+cMuted}>{b}</div></div>);
+      const line=(a,b,bc)=>(<div className={"flex items-center justify-between gap-2 border-b pb-2 "+cBorder}><div className="text-sm font-semibold truncate">{a}</div><div className="text-xs truncate font-bold" style={{color:bc||"#64748B"}}>{b}</div></div>);
       return (
         <div className="space-y-4">
           <div className={"rounded-2xl p-4 border-r-4 "+cCard} style={{borderRightColor:"#4F46E5"}}><h2 className="font-extrabold">الرؤى الذكية</h2><p className={"text-xs mt-0.5 "+cMuted}>تحليلات مستخرجة آلياً من بياناتك الفعلية لتوجيه أولويات العمل</p></div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Block title="دهانون غير متابَعين" color="#DC2626" items={notContacted} go="painters" empty="كل الدهانين تمت متابعتهم مؤخراً."
-              render={(p,i)=><div key={i}>{line(p.name,`${p.city||"—"} · منذ ${daysAgo(p.last_visit||p.last_contact)} يوم`)}</div>}/>
-            <Block title="مواقع عالية القيمة غير مزارة" color="#D97706" items={highValueUnvisited} go="projects" empty="لا توجد مواقع كبيرة دون زيارة."
-              render={(p,i)=><div key={i}>{line(p.name,`${Number(p.value||0).toLocaleString()} ر.س`)}</div>}/>
-            <Block title="مواقع معرّضة للخسارة" color="#4F46E5" items={atRisk} go="projects" empty="لا توجد مواقع عالية الخطورة."
-              render={(p,i)=><div key={i}>{line(p.name,`${p.win_prob||0}% · خطر ${p.risk_level||"—"}`)}</div>}/>
+              render={(p,i)=><div key={i}>{line(p.name,`${p.city||"—"} · منذ ${daysAgo(p.last_visit||p.last_contact)} يوم`,"#DC2626")}</div>}/>
             <Block title="متابعات متأخرة" color="#DC2626" items={overdue} go="tasks" empty="لا متابعات متأخرة، أحسنت."
-              render={(p,i)=><div key={i}>{line(p.name,`موعدها ${p.next_followup}`)}</div>}/>
-            <Block title="المدن الأقل نشاطاً" color="#0891B2" items={leastCities} empty="—"
-              render={(c,i)=><div key={i}>{line(c.city,`نشاط: ${c.n}`)}</div>}/>
-            <Block title="المنتجات الأقل استخداماً" color="#7C3AED" items={leastProducts} go="products" empty="—"
-              render={(x,i)=><div key={i}>{line(x[0],`استُخدم ${x[1]} مرة`)}</div>}/>
+              render={(p,i)=><div key={i}>{line(p.name,`موعدها ${p.next_followup}`,"#DC2626")}</div>}/>
+            <Block title="مدن يتفوّق فيها المنافسون" color="#9F1239" items={competitorCities} go="marketshare" empty="حصة الجزيرة جيدة في كل المدن المرصودة."
+              render={(c,i)=><div key={i}>{line(c.city,`حصة الجزيرة ${c.share}% · ${c.tot} رصدة`,"#9F1239")}</div>}/>
+            <Block title="مواقع بلا دهان مسؤول" color="#D97706" items={sitesNoPainter} go="projects" empty="كل المواقع مرتبطة بدهان."
+              render={(p,i)=><div key={i}>{line(p.name,`${p.city||"—"} · ${p.type||"—"}`,"#D97706")}</div>}/>
+            <Block title="المدن الأقل تغطية" color="#0891B2" items={leastCities} go="plan" empty="—"
+              render={(c,i)=><div key={i}>{line(c.city,`نشاط: ${c.n}`,"#0891B2")}</div>}/>
+            <Block title="منتجات الجزيرة الأقل رصداً" color="#7C3AED" items={leastProducts} go="products" empty="—"
+              render={(x,i)=><div key={i}>{line(x[0],`رُصد ${x[1]} مرة`,"#7C3AED")}</div>}/>
           </div>
-          <div className={card}><h4 className="font-bold text-sm mb-1.5" style={{color:"#16A34A"}}>صحة قاعدة الدهانين</h4><p className="text-xs leading-relaxed">{active} دهان نشط من أصل {d.painters.length}، و{competitorP.length} مصنّفون كمنافس يمثّلون فرص تحويل.</p></div>
+          <div className={card}><h4 className="font-bold text-sm mb-1.5" style={{color:"#16A34A"}}>صحة قاعدة الدهانين</h4><p className="text-xs leading-relaxed">{active} دهان نشط من أصل {d.painters.length}، و{competitorP.length} مصنّفون كمنافس يمثّلون فرص تحويل. لديك {sitesNoPainter.length} موقع دون دهان مسؤول.</p></div>
         </div>
       );
     }
@@ -1257,51 +1253,78 @@ const DEFAULT_CATALOG = [
     function ReportsPage() {
       const [data,setData]=useState(null);
       useEffect(()=>{(async()=>{
-        const [p,pr,c,v,t,co]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*"),db.from("competitors").select("*")]);
-        setData({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[],competitors:co.data||[]});
+        const [p,pr,c,v,t]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*")]);
+        setData({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[]});
       })()},[]);
       const cut=days=>{ const dt=new Date(); dt.setDate(dt.getDate()-days); return dt.toISOString().slice(0,10); };
+      // كل الرصدات (منتجات) مع سياق المدينة/الموقع
+      function allFindings(){ const recs=[];
+        (data.projects||[]).forEach(p=>parseFindings(p.products).forEach(f=>recs.push({...f,where:p.name,city:p.city||"—",src:"موقع"})));
+        (data.visits||[]).forEach(v=>parseFindings(v.products).forEach(f=>recs.push({...f,where:v.project||v.target,city:v.location||"—",src:"زيارة"})));
+        return recs; }
 
       function periodReport(label,days){ if(!data)return; const since=cut(days);
         const v=data.visits.filter(x=>String(x.date||"")>=since);
         const pr=data.projects.filter(x=>String(x.created_at||"").slice(0,10)>=since);
-        const won=data.projects.filter(x=>x.status==="تم الفوز");
-        let body=kpisHtml([["زيارات الفترة",v.length],["مشاريع جديدة",pr.length],["إجمالي المشاريع",data.projects.length],["قيمة الفرص",data.projects.reduce((a,x)=>a+(Number(x.value)||0),0).toLocaleString()+" ر.س"]]);
-        body+="<h2>زيارات الفترة</h2>"+tableHtml(["الجهة","النوع","التاريخ","الموقع","النتيجة"],v.map(x=>[x.target,x.type,x.date,x.location,x.results]));
-        body+="<h2>مشاريع جديدة في الفترة</h2>"+tableHtml(["المشروع","المدينة","الحالة","القيمة"],pr.map(x=>[x.name,x.city,x.status,(Number(x.value)||0).toLocaleString()]));
+        const recs=allFindings(); const comp=recs.filter(r=>r.c&&r.c!==OWN_COMPANY);
+        const cities=new Set(v.map(x=>x.location).filter(Boolean));
+        let body=kpisHtml([["زيارات الفترة",v.length],["مواقع جديدة",pr.length],["مدن تمّت تغطيتها",cities.size],["منتجات منافسين مرصودة",comp.length]]);
+        body+="<h2>زيارات الفترة</h2>"+tableHtml(["عنوان الزيارة","النوع","المدينة","التاريخ","النتيجة"],v.map(x=>[x.target,x.type,x.location,x.date,x.results]));
+        body+="<h2>مواقع جديدة في الفترة</h2>"+tableHtml(["الموقع","المدينة","النوع","الدهان","المطوّر"],pr.map(x=>[x.name,x.city,x.type,x.painter,x.contractor]));
         printReport(label, body);
       }
       function paintersReport(){ if(!data)return;
         const projByPainter={}; data.projects.forEach(p=>{if(p.painter)projByPainter[p.painter]=(projByPainter[p.painter]||0)+1;});
         const visByPainter={}; data.visits.forEach(v=>{const k=v.painter||v.target; if(k)visByPainter[k]=(visByPainter[k]||0)+1;});
-        const rows=data.painters.map(p=>[p.name,p.city,p.status,projByPainter[p.name]||0,visByPainter[p.name]||0,p.rating||0,p.last_visit||p.last_contact||"—"]);
-        let body=kpisHtml([["الدهانين",data.painters.length],["النشطون",data.painters.filter(p=>p.status==="نشط").length],["منافسون",data.painters.filter(p=>p.status==="منافس").length]]);
-        body+="<h2>نشاط الدهانين</h2>"+tableHtml(["الاسم","المدينة","الحالة","المشاريع","الزيارات","التقييم","آخر تواصل"],rows);
+        const rows=data.painters.map(p=>[p.name,p.city,p.status,p.contact_method||"—",projByPainter[p.name]||0,visByPainter[p.name]||0,p.rating||0,p.last_visit||p.last_contact||"—"]);
+        let body=kpisHtml([["الدهانين",data.painters.length],["النشطون",data.painters.filter(p=>p.status==="نشط").length],["تمّت متابعتهم",data.painters.filter(p=>p.contact_method).length],["منافسون",data.painters.filter(p=>p.status==="منافس").length]]);
+        body+="<h2>نشاط الدهانين</h2>"+tableHtml(["الاسم","المدينة","الحالة","طريقة المتابعة","المواقع","الزيارات","التقييم","آخر تواصل"],rows);
         printReport("تقرير نشاط الدهانين", body);
       }
-      function projectsReport(){ if(!data)return;
-        const rows=data.projects.map(p=>[p.name,p.type,p.city,p.status,p.priority||"—",p.risk_level||"—",(Number(p.value)||0).toLocaleString(),(p.win_prob||0)+"%"]);
-        let body=kpisHtml([["المشاريع",data.projects.length],["تم الفوز",data.projects.filter(p=>p.status==="تم الفوز").length],["قيمة الفرص",data.projects.reduce((a,p)=>a+(Number(p.value)||0),0).toLocaleString()+" ر.س"],["إيراد متوقع",data.projects.reduce((a,p)=>a+(Number(p.expected_revenue)||0),0).toLocaleString()+" ر.س"]]);
-        body+="<h2>تفاصيل المشاريع</h2>"+tableHtml(["المشروع","النوع","المدينة","الحالة","الأولوية","الخطر","القيمة","الفوز"],rows);
-        printReport("تقرير المشاريع", body);
+      function sitesReport(){ if(!data)return;
+        const rows=data.projects.map(p=>[p.name,p.type,p.city,p.owner||"—",p.contractor||"—",p.painter||"—",p.stage||"—"]);
+        const byCity={}; data.projects.forEach(p=>{const k=p.city||"غير محدد"; byCity[k]=(byCity[k]||0)+1;});
+        let body=kpisHtml([["المواقع",data.projects.length],["مرتبطة بدهان",data.projects.filter(p=>p.painter&&p.painter!=="-").length],["مرتبطة بمطوّر",data.projects.filter(p=>p.contractor&&p.contractor!=="-").length],["مدن",Object.keys(byCity).length]]);
+        body+="<h2>المواقع حسب المدينة</h2>"+tableHtml(["المدينة","عدد المواقع"],Object.entries(byCity).sort((a,b)=>b[1]-a[1]));
+        body+="<h2>تفاصيل المواقع</h2>"+tableHtml(["الموقع","النوع","المدينة","المالك","المطوّر","الدهان","المرحلة"],rows);
+        printReport("تقرير المواقع", body);
       }
-      function competitorsReport(){ if(!data)return;
-        const rows=data.competitors.map(c=>[c.competitor,c.product,c.price,c.strengths,c.weaknesses,c.project]);
-        let body=kpisHtml([["سجلات الرصد",data.competitors.length],["منافسون",new Set(data.competitors.map(c=>c.competitor)).size]]);
-        body+="<h2>رصد المنافسين</h2>"+tableHtml(["المنافس","المنتج","السعر","نقاط القوة","نقاط الضعف","المشروع"],rows);
-        printReport("تقرير المنافسين", body);
+      function developersReport(){ if(!data)return;
+        const rows=data.contractors.map(c=>[c.name,c.city||"—",c.phone||"—",c.contact||"—",c.projects_count||0,c.priority||"—",c.followup_status||"—"]);
+        const byCity={}; data.contractors.forEach(c=>{const k=c.city||"غير محدد"; byCity[k]=(byCity[k]||0)+1;});
+        let body=kpisHtml([["المطوّرون العقاريون",data.contractors.length],["مدن",Object.keys(byCity).length],["أولوية عالية",data.contractors.filter(c=>c.priority==="عالية").length]]);
+        body+="<h2>التوزيع حسب المدينة</h2>"+tableHtml(["المدينة","العدد"],Object.entries(byCity).sort((a,b)=>b[1]-a[1]));
+        body+="<h2>تفاصيل المطوّرين العقاريين</h2>"+tableHtml(["الاسم","المدينة","الجوال","المسؤول","عدد المواقع","الأولوية","حالة المتابعة"],rows);
+        printReport("تقرير المطوّرين العقاريين", body);
+      }
+      function marketMonitorReport(){ if(!data)return;
+        const comp=allFindings().filter(r=>r.c&&r.c!==OWN_COMPANY);
+        if(comp.length===0){ alert("لا توجد منتجات منافسين مرصودة بعد."); return; }
+        const byCompany={}; comp.forEach(r=>byCompany[r.c]=(byCompany[r.c]||0)+1);
+        const ranked=Object.entries(byCompany).sort((a,b)=>b[1]-a[1]);
+        const total=comp.length;
+        const barRow=(label,val)=>{ const pct=Math.round(val/total*100); const col=companyColor(label);
+          return `<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><b>${label}</b><b style="color:${col}">${pct}% · ${val}</b></div><div style="height:12px;border-radius:7px;background:#eef2f7;overflow:hidden"><div style="height:12px;width:${pct}%;background:${col};border-radius:7px"></div></div></div>`; };
+        let body=kpisHtml([["رصدات المنافسين",total],["عدد المنافسين",ranked.length],["مواقع مرصودة",new Set(comp.map(r=>r.where)).size],["مدن",new Set(comp.map(r=>r.city)).size]]);
+        body+="<h2>المنافسون الأكثر حضوراً</h2>"+ranked.map(([l,v])=>barRow(l,v)).join("");
+        body+="<h2>سجلّ الرصدات</h2>"+tableHtml(["المنافس","المنتج","العائلة","الموقع","المدينة","المصدر"],comp.map(r=>[r.c,r.p,r.f,r.where,r.city,r.src]));
+        printReport("تقرير رصد السوق", body);
       }
       function marketReport(){ if(!data)return; const ms=computeMarketShare(data.projects,data.visits);
         if(ms.total===0){ alert("لا توجد منتجات مرصودة بعد لحساب الحصة السوقية."); return; }
         const overall=Object.entries(ms.overall).sort((a,b)=>b[1]-a[1]);
         const ownPct=Math.round((ms.overall[OWN_COMPANY]||0)/ms.total*100);
         const rank=overall.findIndex(x=>x[0]===OWN_COMPANY)+1;
-        // أشرطة ملوّنة للحصة الإجمالية
         const barRow=(label,val)=>{ const pct=Math.round(val/ms.total*100); const col=companyColor(label); const own=label===OWN_COMPANY;
           return `<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><b style="${own?'color:'+col:''}">${label}${own?' ★':''}</b><b style="color:${col}">${pct}% · ${val}</b></div><div style="height:12px;border-radius:7px;background:#eef2f7;overflow:hidden"><div style="height:12px;width:${pct}%;background:${col};border-radius:7px"></div></div></div>`; };
+        // حصة الجزيرة لكل مدينة
+        const cityAgg={}; CITIES.forEach(c=>cityAgg[c]={own:0,tot:0});
+        const addC=(city,prods)=>{ if(cityAgg[city]==null)return; parseFindings(prods).forEach(f=>{ if(!f.c)return; cityAgg[city].tot++; if(f.c===OWN_COMPANY)cityAgg[city].own++; }); };
+        data.projects.forEach(p=>addC(p.city,p.products)); data.visits.forEach(v=>addC(v.location,v.products));
+        const cityRows=Object.entries(cityAgg).filter(([,o])=>o.tot>0).map(([c,o])=>[c,o.tot,Math.round(o.own/o.tot*100)+"%"]).sort((a,b)=>b[1]-a[1]);
         let body=kpisHtml([["حصة الجزيرة",ownPct+"%"],["ترتيب الجزيرة","#"+(rank||"-")],["إجمالي الرصدات",ms.total],["عدد الشركات",overall.length]]);
         body+="<h2>الحصة الإجمالية بين الشركات</h2>"+overall.map(([l,v])=>barRow(l,v)).join("");
-        // جداول لكل عائلة
+        body+="<h2>حصة الجزيرة حسب المدينة</h2>"+tableHtml(["المدينة","إجمالي الرصدات","حصة الجزيرة"],cityRows);
         CATALOG.forEach(fam=>{ const m=ms.perFamily[fam.family]||{}; const tot=Object.values(m).reduce((a,b)=>a+b,0); if(!tot) return;
           const rows=Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([c,v])=>[c+(c===OWN_COMPANY?" ★":""),v,Math.round(v/tot*100)+"%"]);
           body+=`<h2 style="border-right-color:${fam.color};color:${fam.color}">${fam.family} (${tot} رصدة)</h2>`+tableHtml(["الشركة","عدد الرصدات","الحصة"],rows); });
@@ -1327,8 +1350,9 @@ const DEFAULT_CATALOG = [
               <button onClick={()=>periodReport("التقرير الأسبوعي",7)} className={repBtn}><Icon n="clock" s={14}/> تقرير أسبوعي</button>
               <button onClick={()=>periodReport("التقرير الشهري",30)} className={repBtn}><Icon n="clock" s={14}/> تقرير شهري</button>
               <button onClick={paintersReport} className={repBtn}>نشاط الدهانين</button>
-              <button onClick={projectsReport} className={repBtn}>تقرير المشاريع</button>
-              <button onClick={competitorsReport} className={repBtn}>تقرير المنافسين</button>
+              <button onClick={sitesReport} className={repBtn}>تقرير المواقع</button>
+              <button onClick={developersReport} className={repBtn}>المطوّرون العقاريون</button>
+              <button onClick={marketMonitorReport} className={repBtn}>رصد السوق (المنافسون)</button>
               <button onClick={marketReport} className={repBtn+" !text-white"} style={{background:"linear-gradient(135deg,#4f46e5,#7c3aed)"}}><Icon n="trophy" s={14}/> الحصة السوقية</button>
             </div>
             <p className={"text-xs mt-3 "+cMuted}>يفتح التقرير في نافذة جديدة منسّقة، استخدم "طباعة / حفظ PDF" لحفظه.</p>
@@ -1361,7 +1385,6 @@ const DEFAULT_CATALOG = [
         // خطة الغد
         try{ const plan=JSON.parse(localStorage.getItem("jazeera_weekplan")||"{}"); const tm=new Date(); tm.setDate(tm.getDate()+1); const tIso=tm.toISOString().slice(0,10);
           if(plan[tIso]) list.push({level:"high",title:"📍 زيارة الغد",text:`غداً مخطّط لزيارة مدينة ${plan[tIso]}`,go:"plan"}); }catch(e){}
-        (pr.data||[]).filter(x=>x.status==="قيد المتابعة"&&((Number(x.win_prob)||0)<50||x.risk_level==="عالي"||x.risk_level==="حرج")).forEach(x=>list.push({level:"high",title:"موقع معرّض للخسارة",text:`${x.name} — احتمالية ${x.win_prob||0}%`,go:"projects"}));
         const allF=[...(p.data||[]),...(pr.data||[]),...(c.data||[])].filter(x=>x.next_followup&&x.next_followup<today&&x.followup_status!=="تمت"&&x.followup_status!=="ملغاة");
         allF.forEach(x=>list.push({level:"high",title:"متابعة متأخرة",text:`${x.name} — كان موعدها ${x.next_followup}`,go:"tasks"}));
         (t.data||[]).filter(x=>x.date&&x.date>=today).forEach(x=>list.push({level:"mid",title:"تدريب قادم",text:`${x.name} — ${x.date}`,go:"trainings"}));
@@ -1373,12 +1396,11 @@ const DEFAULT_CATALOG = [
         // تذكير خطة الغد بالمدينة
         try{ const plan=JSON.parse(localStorage.getItem("jazeera_weekplan")||"{}"); const tm=new Date(); tm.setDate(tm.getDate()+1); const tIso=tm.toISOString().slice(0,10);
           if(plan[tIso]) fireNotification("📍 زيارة الغد", `غداً مخطّط لزيارة مدينة ${plan[tIso]} — راجع أبرز الدهانين والمطوّرين هناك.`, "plan-tomorrow"); }catch(e){}
-        Promise.all([db.from("painters").select("name,next_followup,followup_status"),db.from("projects").select("name,next_followup,followup_status,status,win_prob,risk_level"),db.from("contractors").select("name,next_followup,followup_status"),db.from("trainings").select("name,date")]).then(([p,pr,c,t])=>{
+        Promise.all([db.from("painters").select("name,next_followup,followup_status"),db.from("projects").select("name,next_followup,followup_status"),db.from("contractors").select("name,next_followup,followup_status"),db.from("trainings").select("name,date")]).then(([p,pr,c,t])=>{
           const due=[...(p.data||[]),...(pr.data||[]),...(c.data||[])].filter(x=>x.next_followup&&x.next_followup<=today&&x.followup_status!=="تمت"&&x.followup_status!=="ملغاة");
           if(due.length){ const overdue=due.filter(x=>x.next_followup<today).length;
             fireNotification("📋 مهامك الميدانية اليوم", `لديك ${due.length} متابعة مستحقّة${overdue?` · منها ${overdue} متأخرة` : ""}.`, "tasks-due"); }
           (t.data||[]).filter(x=>x.date===today).forEach(x=>fireNotification("🎓 تدريب اليوم", x.name, "training-"+x.name));
-          (pr.data||[]).filter(x=>x.status==="قيد المتابعة"&&((Number(x.win_prob)||0)<50||x.risk_level==="عالي"||x.risk_level==="حرج")).slice(0,1).forEach(x=>fireNotification("⚠️ مشروع معرّض للخسارة", `${x.name} — احتمالية الفوز ${x.win_prob||0}%`, "risk"));
         }).catch(()=>{});
       }
       useEffect(()=>{ loadNotifs(); cloudLoadCatalog();
