@@ -643,6 +643,20 @@ const DEFAULT_CATALOG = [
       return false;
     }
 
+    /* تحديث آمن بالمعرّف (id) لأي جدول — يتجاهل الأعمدة غير الموجودة ويعيد المحاولة بدل الفشل الصامت */
+    async function softUpdateById(table, id, patch){
+      let body={...patch};
+      for(let i=0;i<6;i++){
+        const r=await db.from(table).update(body).eq("id",id);
+        if(!r.error) return { ok:true };
+        const m=(r.error.message||"")+" "+(r.error.details||"");
+        const col=(m.match(/'([a-z_]+)' column/i)||m.match(/column "?([a-z_]+)"? of/i)||m.match(/column ([a-z_]+)/i)||[])[1];
+        if(col && col in body){ delete body[col]; continue; }
+        return { ok:false, error:r.error };
+      }
+      return { ok:false, error:new Error("تعذّر التحديث بعد عدّة محاولات") };
+    }
+
     /* ===== لوحة التفاعلات (مكالمات / واتساب / عروض أسعار / رسائل) لكل دهان ===== */
     function InteractionsPanel({ painterName, refreshKey }) {
       const [rows,setRows]=useState(null); const [error,setError]=useState("");
@@ -1008,7 +1022,13 @@ const DEFAULT_CATALOG = [
       const overdue=tasks.filter(t=>t.date<today).sort((a,b)=>a.date.localeCompare(b.date));
       const dueToday=tasks.filter(t=>t.date===today);
       const upcoming=tasks.filter(t=>t.date>today).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,20);
-      async function done(t){ await db.from(t.tbl).update({followup_status:"تمت",last_contact:today}).eq("id",t.id); logActivity("تعديل",t.tbl,"متابعة",t.name); load(); }
+      async function done(t){
+        const r = await softUpdateById(t.tbl, t.id, { followup_status:"تمت", last_contact:today, next_followup:null });
+        if(!r.ok){ alert("تعذّر تحديث المتابعة: "+(r.error&&r.error.message||"خطأ غير معروف")); return; }
+        // تحديث فوري للحالة محليًا حتى تختفي المهمة من القائمة على طول بدل انتظار إعادة تحميل كل البيانات
+        setD(prev=> prev ? { ...prev, [t.tbl]: prev[t.tbl].map(x=> x.id===t.id ? { ...x, followup_status:"تمت", last_contact:today, next_followup:null } : x) } : prev);
+        logActivity("تعديل",t.tbl,"متابعة",t.name);
+      }
 
       const Group=({title,items,color,empty})=>(
         <div className={"rounded-2xl p-4 "+cCard}>
@@ -1493,9 +1513,10 @@ const DEFAULT_CATALOG = [
     }
 
     /* ===== التقارير الاحترافية ===== */
-    function printReport(title, bodyHtml){
+    function printReport(title, bodyHtml, opts){
+      opts=opts||{};
       const w=window.open("","_blank");
-      const css=`*{box-sizing:border-box;font-family:'Segoe UI',Tahoma,sans-serif}body{margin:0;padding:28px;color:#0f172a;direction:rtl}
+      const css=`*{box-sizing:border-box;font-family:'Segoe UI',Tahoma,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;padding:28px;color:#0f172a;direction:rtl}
         .h{display:flex;align-items:center;gap:12px;border-bottom:3px solid #4338CA;padding-bottom:14px;margin-bottom:18px}
         .logo{width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,#4f46e5,#4338ca);color:#fff;font-weight:800;font-size:22px;display:flex;align-items:center;justify-content:center}
         h1{font-size:20px;margin:0}.sub{color:#64748b;font-size:12px;margin-top:2px}
@@ -1506,9 +1527,9 @@ const DEFAULT_CATALOG = [
         .kpi{flex:1;min-width:130px;border:1px solid #e2e8f0;border-radius:10px;padding:10px}
         .kpi .l{font-size:11px;color:#64748b}.kpi .v{font-size:18px;font-weight:800;color:#4338CA}
         .foot{margin-top:26px;border-top:1px solid #e2e8f0;padding-top:10px;color:#94a3b8;font-size:11px;text-align:center}
-        @media print{.noprint{display:none}}`;
+        @media print{.noprint{display:none} @page{margin:12mm}}`;
       w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${title}</title><style>${css}</style></head><body>
-        <div class="h"><div class="logo">ج</div><div><h1>${title}</h1><div class="sub">نظام الجزيرة الميداني · ${new Date().toLocaleDateString("ar")}</div></div></div>
+        ${opts.noHeader?"":`<div class="h"><div class="logo">ج</div><div><h1>${title}</h1><div class="sub">نظام الجزيرة الميداني · ${new Date().toLocaleDateString("ar")}</div></div></div>`}
         ${bodyHtml}
         <div class="foot">تقرير مُنشأ آلياً من نظام الجزيرة الميداني</div>
         <div class="noprint" style="text-align:center;margin-top:18px"><button onclick="window.print()" style="background:#4338CA;color:#fff;border:0;padding:10px 22px;border-radius:8px;font-weight:700;cursor:pointer">طباعة / حفظ PDF</button></div>
@@ -1521,6 +1542,46 @@ const DEFAULT_CATALOG = [
       }</tbody></table>`;
     }
     function kpisHtml(items){ return `<div class="kpis">${items.map(([l,v])=>`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("")}</div>`; }
+
+    /* ===== طباعة/PDF التقرير اليومي بنفس الهوية البصرية للتطبيق (بانر متدرّج، كروت KPI ملوّنة، أقسام مصنّفة) ===== */
+    function escHtml(s){ return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+    function dailyReportPrintBody(kpis, groups, totalActivities, dateLabel){
+      const hero = `
+        <div style="border-radius:18px;padding:26px;color:#fff;background:linear-gradient(135deg,#4f46e5 0%,#6d28d9 55%,#7c3aed 100%);margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px">
+          <div>
+            <div style="font-size:12px;font-weight:700;opacity:.85">التقرير اليومي</div>
+            <div style="font-size:19px;font-weight:900;margin-top:3px">${escHtml(dateLabel)}</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:38px;font-weight:900;line-height:1">${totalActivities}</div>
+            <div style="font-size:11px;font-weight:700;opacity:.85;margin-top:3px">نشاط مُسجَّل اليوم</div>
+          </div>
+        </div>`;
+      const kpisBlock = `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px">${kpis.map(k=>`
+        <div style="flex:1;min-width:150px;border-radius:14px;padding:14px;color:#fff;background:linear-gradient(135deg, ${k.color} 0%, ${k.color}cc 100%);box-shadow:0 8px 18px -10px ${k.color}99">
+          <div style="font-size:11px;font-weight:700;opacity:.9">${escHtml(k.label)}</div>
+          <div style="font-size:24px;font-weight:900;margin-top:4px">${k.value}</div>
+        </div>`).join("")}</div>`;
+      const groupsBlock = groups.map(g=>`
+        <div style="border:1px solid #e2e8f0;border-radius:16px;padding:16px 18px;margin-bottom:14px;border-right:5px solid ${g.color};page-break-inside:avoid">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="width:11px;height:11px;border-radius:50%;background:${g.color};display:inline-block"></span>
+              <span style="font-weight:800;font-size:14px;color:${g.color}">${escHtml(g.title)}</span>
+            </div>
+            <span style="font-size:12px;font-weight:900;color:${g.color};background:${g.color}1a;padding:3px 12px;border-radius:999px">${g.items.length}</span>
+          </div>
+          ${g.items.map(it=>`
+            <div style="display:flex;justify-content:space-between;gap:10px;padding:9px 2px;border-top:1px solid #f1f5f9;font-size:12px">
+              <div>
+                <b>${escHtml(it.title)}</b>${it.badge?` <span style="font-size:10px;font-weight:800;color:${it.badgeColor||"#64748b"};background:${(it.badgeColor||"#64748b")}1a;padding:2px 8px;border-radius:999px;margin-right:4px">${escHtml(it.badge)}</span>`:""}
+                ${it.subtitle?`<div style="color:#64748b;margin-top:2px">${escHtml(it.subtitle)}</div>`:""}
+              </div>
+              ${it.user?`<span style="color:#94a3b8;font-size:11px;white-space:nowrap">${escHtml(it.user)}</span>`:""}
+            </div>`).join("")}
+        </div>`).join("");
+      return hero + kpisBlock + (groups.length?groupsBlock:`<div style="text-align:center;color:#94a3b8;padding:30px 0;font-size:13px">لا توجد أنشطة مسجّلة اليوم بعد.</div>`);
+    }
 
     /* ===== سكيليتون تحميل عام للتقارير ===== */
     function ReportSkeleton(){
@@ -1622,9 +1683,9 @@ const DEFAULT_CATALOG = [
       const exportHeaders=["التصنيف","العنصر","التفاصيل","المستخدم"];
       const exportRows=groups.flatMap(g=>g.items.map(it=>[g.title,it.title,it.subtitle||"—",it.user||"—"]));
       const doPrint=()=>{
-        let body=kpisHtml(kpis.map(k=>[k.label,k.value]));
-        groups.forEach(g=>{ body+=`<h2 style="border-right-color:${g.color};color:${g.color}">${g.title} (${g.items.length})</h2>`+tableHtml(["العنصر","التفاصيل","المستخدم"],g.items.map(it=>[it.title,it.subtitle||"—",it.user||"—"])); });
-        printReport("التقرير اليومي — "+new Date().toLocaleDateString("ar"), body);
+        const dateLabel=new Date().toLocaleDateString("ar-SA",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});
+        const body=dailyReportPrintBody(kpis, groups, totalActivities, dateLabel);
+        printReport("التقرير اليومي — "+dateLabel, body, {noHeader:true});
       };
 
       return (
