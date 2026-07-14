@@ -97,7 +97,7 @@
       if(table==="painters"){ add(r.status,STATUS_COLORS[r.status]); add(r.city,"#0891B2"); if(r.priority&&r.priority!=="بدون")add("أولوية "+r.priority,PRIORITY_COLORS[r.priority]); if(r.contact_method)add(r.contact_method,STATUS_COLORS[r.contact_method]); if(r.has_quote)add("عرض سعر مُقدَّم","#9333EA"); }
       else if(table==="projects"){ add(r.city,"#0891B2"); add(r.type,"#7C3AED"); if(r.painter&&r.painter!=="-")add("الدهان: "+r.painter,"#4F46E5"); if(r.contractor&&r.contractor!=="-")add(r.contractor,"#D97706"); if(r.stage)add(r.stage,"#16A34A"); }
       else if(table==="contractors"){ add(r.city,"#0891B2"); if(r.priority&&r.priority!=="بدون")add("أولوية "+r.priority,PRIORITY_COLORS[r.priority]); if(Number(r.projects_count)>0)add(r.projects_count+" موقع","#D97706"); }
-      else if(table==="visits"){ add(r.type,STATUS_COLORS[r.type]); add(r.location,"#0891B2"); add(r.date,"#64748B"); }
+      else if(table==="visits"){ add(r.type,STATUS_COLORS[r.type]); add(r.location,"#0891B2"); add(r.date,"#64748B"); const pn=String(r.painter||"").split(",").map(s=>s.trim()).filter(Boolean); if(pn.length>1)add(pn.length+" دهانين","#4F46E5"); const sn=String(r.project||"").split(",").map(s=>s.trim()).filter(Boolean); if(sn.length>1)add(sn.length+" مواقع","#D97706"); }
       return t;
     }
     function TagRow({ table, r, max }){ const tags=cardTags(table,r).slice(0,max||4);
@@ -165,7 +165,7 @@ const DEFAULT_CATALOG = [
         subtitle:r=>`${r.contact||"—"} · ${r.phone||"—"} · ${r.city||"—"}`,
         kpis:rows=>[["إجمالي المطوّرين",rows.length,"#0891B2"],["إجمالي المواقع",rows.reduce((a,r)=>a+(Number(r.projects_count)||0),0),"#D97706"],["أولوية عالية",rows.filter(r=>r.priority==="عالية").length,"#DC2626"]], addLabel:"إضافة مطوّر عقاري" },
       visits: { table:"visits", title:"الزيارات", statusField:"type", filterKeys:["type","location"], geo:true,
-        fields:[ {key:"target",label:"عنوان الزيارة",type:"text"},{key:"type",label:"نوع الزيارة",type:"select",opts:VISIT_TYPES},{key:"location",label:"المدينة",type:"select",opts:CITIES},{key:"date",label:"التاريخ",type:"date"},{key:"project",label:"المواقع المرتبطة (يمكن أكثر من موقع)",type:"refs",refTable:"projects"},{key:"painter",label:"الدهان المرتبط",type:"ref",refTable:"painters"},{key:"contractor",label:"المطوّر المرتبط",type:"ref",refTable:"contractors"},{key:"goals",label:"الهدف",type:"text"},{key:"results",label:"النتيجة",type:"text"},{key:"products",label:"المنتجات المرصودة في الموقع",type:"products"},{key:"next_followup",label:"المتابعة القادمة",type:"date"},{key:"images",label:"صور الزيارة",type:"images"} ],
+        fields:[ {key:"target",label:"عنوان الزيارة (مثال: زيارة ضمد)",type:"text"},{key:"type",label:"نوع الزيارة",type:"select",opts:VISIT_TYPES},{key:"location",label:"المدينة",type:"select",opts:CITIES},{key:"date",label:"التاريخ",type:"date"},{key:"project",label:"المواقع المرصودة في الزيارة (يمكن أكثر من موقع)",type:"refs",refTable:"projects"},{key:"painter",label:"الدهانون الذين قابلتهم في الزيارة (يمكن أكثر من دهان)",type:"refs",refTable:"painters"},{key:"contractor",label:"المطوّر المرتبط",type:"ref",refTable:"contractors"},{key:"goals",label:"الهدف",type:"text"},{key:"results",label:"النتيجة",type:"text"},{key:"products",label:"المنتجات المرصودة في الموقع",type:"products"},{key:"next_followup",label:"المتابعة القادمة",type:"date"},{key:"images",label:"صور الزيارة",type:"images"} ],
         subtitle:r=>`${r.type||"—"} · ${r.location||"—"} · ${r.date||"—"}`,
         kpis:rows=>[["إجمالي الزيارات",rows.length,"#7C3AED"],["زيارات المواقع",rows.filter(r=>isSiteVisit(r.type)).length,"#D97706"],["زيارات الدهانين",rows.filter(r=>r.type==="دهان").length,"#16A34A"]], addLabel:"إضافة زيارة" },
       trainings: { table:"trainings", title:"التدريبات", statusField:"topic", filterKeys:["topic","location"], geo:false,
@@ -254,7 +254,8 @@ const DEFAULT_CATALOG = [
     }
 
     /* تزامن الزيارة مع الدهان/المقاول/المشروع وضخ المنتجات المرصودة في المكان الصحيح */
-    async function syncVisit(visit){
+    /* تزامن الزيارة الرئيسية مع كل الدهانين والمواقع المرتبطين بها (زيارة واحدة قد تشمل أكثر من دهان وأكثر من موقع) */
+    async function syncVisit(visit, mode){
       try{
         const today=TODAY(); const findings=parseFindings(visit.products);
         const safeInsert=async(tbl,row)=>{ let body={...row}; for(let i=0;i<6;i++){ const r=await db.from(tbl).insert([body]); if(!r.error) return; const m=(r.error.message||"")+" "+(r.error.details||""); const col=(m.match(/'([a-z_]+)' column/i)||m.match(/column "?([a-z_]+)"? of/i)||m.match(/column ([a-z_]+)/i)||[])[1]; if(col&&col in body){delete body[col];continue;} return; } };
@@ -263,7 +264,18 @@ const DEFAULT_CATALOG = [
             for(let i=0;i<6;i++){ const r=await db.from(tbl).update(p).eq("id",id); if(!r.error) break; const m=(r.error.message||"")+" "+(r.error.details||""); const col=(m.match(/'([a-z_]+)' column/i)||m.match(/column "?([a-z_]+)"? of/i)||m.match(/column ([a-z_]+)/i)||[])[1]; if(col&&col in p){delete p[col];continue;} break; }
             return id; } return null; };
         const fu = visit.next_followup?{next_followup:visit.next_followup,followup_status:"مجدولة"}:{};
-        if(visit.type==="دهان"){ await upd("painters", visit.painter||visit.target, {last_visit:today,last_contact:today,contact_method:"زيارة ميدانية", ...fu}); }
+
+        // الدهانون: زيارة واحدة قد تشمل عدة دهانين (نفس منطق المواقع المتعددة)
+        const painterNames=String(visit.painter||"").split(",").map(s=>s.trim()).filter(Boolean);
+        if(visit.type==="دهان" && painterNames.length===0 && visit.target) painterNames.push(visit.target);
+        for(const nm of painterNames){
+          await upd("painters", nm, {last_visit:visit.date||today,last_contact:visit.date||today,contact_method:"زيارة ميدانية", ...fu});
+          // تُسجَّل كتفاعل "زيارة ميدانية" في سجل الدهان فقط عند إنشاء الزيارة لأول مرة (تفادياً للتكرار عند التعديل)
+          if(mode==="add"){
+            try{ await db.from("interactions").insert([{ painter:nm, type:"زيارة ميدانية", notes:visit.target||visit.goals||null, date:visit.date||today, user_name:currentUserName() }]); }catch(e){}
+          }
+        }
+
         if(isDevVisit(visit.type)){ await upd("contractors", visit.contractor||visit.target, {...fu}); }
         // المواقع المرتبطة (قد تكون عدّة مواقع مفصولة بفواصل) — تُضخّ المنتجات لكلٍّ منها، وتُنشأ إن لم توجد
         const sites=String(visit.project||"").split(",").map(s=>s.trim()).filter(Boolean);
@@ -514,13 +526,13 @@ const DEFAULT_CATALOG = [
         if(cfg.table==="painters"){
           const [pr,viP,viT]=await Promise.all([
             db.from("projects").select("*").eq("painter",name),
-            db.from("visits").select("*").eq("painter",name),
+            db.from("visits").select("*").ilike("painter","%"+name+"%"),
             db.from("visits").select("*").eq("target",name),
           ]);
           const vmap={}; [...(viP.data||[]),...(viT.data||[])].forEach(x=>vmap[x.id]=x);
           setData({projects:pr.data||[],visits:Object.values(vmap)});
         } else if(cfg.table==="projects"){
-          const vi=await db.from("visits").select("*").eq("project",name);
+          const vi=await db.from("visits").select("*").ilike("project","%"+name+"%");
           setData({visits:vi.data||[]});
         } else if(cfg.table==="contractors"){
           const [pr,vi]=await Promise.all([
@@ -571,8 +583,19 @@ const DEFAULT_CATALOG = [
         </div>);
       }
       if(cfg.table==="visits"){
-        const links=[["دهان",record.painter,"painters"],["موقع",record.project,"projects"],["مطور عقاري",record.contractor,"contractors"]].filter(x=>x[1]);
-        return (<div className="space-y-2">{links.length?links.map(([t,n,go])=>(<button key={t} onClick={()=>onGo&&onGo(go)} className={"w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs text-right "+cTrack+" "+cHover}><span className="font-semibold">{n}</span><Badge status={t}/></button>)):<div className={"text-xs "+cMuted}>لا توجد روابط لهذه الزيارة</div>}</div>);
+        const painterNames=String(record.painter||"").split(",").map(s=>s.trim()).filter(Boolean);
+        const siteNames=String(record.project||"").split(",").map(s=>s.trim()).filter(Boolean);
+        const hasAny=painterNames.length>0||siteNames.length>0||!!record.contractor;
+        return (<div className="space-y-4">
+          {painterNames.length>0&&<div><div className="text-xs font-bold mb-2">الدهانون الذين تمّت مقابلتهم ({painterNames.length})</div>
+            <div className="flex flex-wrap gap-1.5">{painterNames.map((n,i)=>(<button key={i} onClick={()=>onGo&&onGo("painters")} className={"inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold "+cTrack+" "+cHover}><Icon n="brush" s={12}/> {n}</button>))}</div>
+          </div>}
+          {siteNames.length>0&&<div><div className="text-xs font-bold mb-2">المواقع المرصودة في هذه الزيارة ({siteNames.length})</div>
+            <div className="flex flex-wrap gap-1.5">{siteNames.map((n,i)=>(<button key={i} onClick={()=>onGo&&onGo("projects")} className={"inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold "+cTrack+" "+cHover}><Icon n="building" s={12}/> {n}</button>))}</div>
+          </div>}
+          {record.contractor&&<button onClick={()=>onGo&&onGo("contractors")} className={"w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs text-right "+cTrack+" "+cHover}><span className="font-semibold">{record.contractor}</span><Badge status="مطور عقاري"/></button>}
+          {!hasAny&&<div className={"text-xs "+cMuted}>لا توجد روابط لهذه الزيارة</div>}
+        </div>);
       }
       return null;
     }
@@ -626,7 +649,7 @@ const DEFAULT_CATALOG = [
       );
     }
 
-    function InteractionModal({ open, onClose, painterName, onSaved }) {
+    function InteractionModal({ open, onClose, painterName, painterCity, onSaved }) {
       const [d,setD]=useState({type:"مكالمة",notes:"",quote_amount:"",date:TODAY()});
       const [saving,setSaving]=useState(false);
       useEffect(()=>{ if(open) setD({type:"مكالمة",notes:"",quote_amount:"",date:TODAY()}); },[open]);
@@ -639,7 +662,14 @@ const DEFAULT_CATALOG = [
         if(error){ setSaving(false); alert("تعذّر حفظ التفاعل: "+error.message+"\nتأكد من إنشاء جدول interactions في Supabase."); return; }
         const patch={ last_interaction_date:d.date, last_interaction_type:d.type, last_contact:d.date, contact_method:d.type };
         if(d.type==="عرض سعر"){ patch.has_quote=true; patch.last_quote_date=d.date; }
+        if(d.type==="زيارة ميدانية"){ patch.last_visit=d.date; }
         await softUpdatePainter(painterName, patch);
+        // تسجيل "زيارة ميدانية" من هنا يُنشئ أيضاً زيارة مقابلة في قسم الزيارات الرئيسي حتى تبقى مصدراً واحداً للحقيقة
+        if(d.type==="زيارة ميدانية"){
+          try{
+            await db.from("visits").insert([{ target:"زيارة "+painterName, type:"دهان", location:painterCity||null, date:d.date||TODAY(), painter:painterName, goals:d.notes||null, results:d.notes||null }]);
+          }catch(e){ /* الحقل قد لا يكون متاحاً بعد */ }
+        }
         logActivity("تفاعل", "painters", "تفاعل ("+d.type+")", painterName);
         setSaving(false); onSaved&&onSaved(); onClose();
       }
@@ -649,6 +679,7 @@ const DEFAULT_CATALOG = [
             <div className="flex items-center justify-between mb-4"><div className="font-bold">تسجيل تفاعل جديد</div><button onClick={onClose} className={cMuted}><Icon n="close" s={18}/></button></div>
             <div className="space-y-3">
               <Sel label="نوع التفاعل" v={d.type} on={v=>setD({...d,type:v})} opts={INTERACTION_TYPES}/>
+              {d.type==="زيارة ميدانية"&&<div className={"text-[11px] rounded-lg px-3 py-2 "+cTrack+" "+cMuted}>سيتم إنشاء زيارة مقابلة تلقائياً في قسم "الزيارات" لهذا الدهان.</div>}
               {d.type==="عرض سعر"&&<Inp label="قيمة العرض (اختياري)" type="number" v={d.quote_amount} on={v=>setD({...d,quote_amount:v})}/>}
               <Inp label="التاريخ" type="date" v={d.date} on={v=>setD({...d,date:v})}/>
               <Inp label="ملاحظات" type="text" v={d.notes} on={v=>setD({...d,notes:v})}/>
@@ -709,7 +740,7 @@ const DEFAULT_CATALOG = [
         const res=await safeWrite(editor.mode, cfg.table, payload, editor.id);
         setSaving(false); if(!res.ok){alert("خطأ في الحفظ: "+res.error.message);return;}
         logActivity(editor.mode==="add"?"إضافة":"تعديل", cfg.table, cfg.title, payload[cfg.fields[0].key]);
-        if(cfg.table==="visits") await syncVisit(payload);
+        if(cfg.table==="visits") await syncVisit(payload, editor.mode);
         setEditor(null); await load();
       }
       async function remove(r){ if(!confirm("متأكد من الحذف؟"))return; const {error}=await db.from(cfg.table).delete().eq("id",r.id); if(error){alert("خطأ: "+error.message);return;} logActivity("حذف",cfg.table,cfg.title,r[cfg.fields[0].key]); setView("list");setSelId(null);load(); }
@@ -864,7 +895,7 @@ const DEFAULT_CATALOG = [
             </div>
           )}
           {cfg.table==="painters"&&selected&&(
-            <InteractionModal open={showInteraction} onClose={()=>setShowInteraction(false)} painterName={selected.name}
+            <InteractionModal open={showInteraction} onClose={()=>setShowInteraction(false)} painterName={selected.name} painterCity={selected.city}
               onSaved={()=>{ setInteractionsKey(k=>k+1); load(); }}/>
           )}
         </div>
@@ -895,7 +926,7 @@ const DEFAULT_CATALOG = [
         let body={...payload}; let ok=false, lastErr=null;
         for(let i=0;i<6;i++){ const r=await db.from("visits").insert([body]); if(!r.error){ok=true;break;} lastErr=r.error; const m=(r.error.message||"")+" "+(r.error.details||""); const col=(m.match(/'([a-z_]+)' column/i)||m.match(/column "?([a-z_]+)"? of/i)||m.match(/column ([a-z_]+)/i)||[])[1]; if(col&&col in body){delete body[col];continue;} break; }
         if(!ok){setSaving(false);alert("خطأ: "+(lastErr&&lastErr.message));return;}
-        await syncVisit(payload); setSaving(false);
+        await syncVisit(payload, "add"); setSaving(false);
         logActivity("إضافة","visits","الزيارات",d.target); onSaved&&onSaved(); onClose();
       }
       return (<div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-3" onClick={onClose}>
@@ -1015,9 +1046,7 @@ const DEFAULT_CATALOG = [
       const visitsByCity=sortTop(group(visits,"location"));
       const citiesCovered=new Set([
         ...visits.map(v=>v.location),
-        ...painters.map(p=>p.city),
         ...projects.map(p=>p.city),
-        ...contractors.map(c=>c.city),
       ].filter(c=>c&&CITIES.includes(c))).size;
       // أفضل الدهانين (مواقع + تقييم)
       const projByPainter={}; projects.forEach(p=>{if(p.painter)projByPainter[p.painter]=(projByPainter[p.painter]||0)+1;});
