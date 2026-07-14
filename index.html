@@ -1582,6 +1582,7 @@ const DEFAULT_CATALOG = [
       const notesRows=data.interactions.filter(x=>x.notes&&String(x.notes).trim());
       const completedFollowups=data.activity.filter(a=>a.action==="تعديل"&&a.entity_label==="متابعة");
       const otherActivity=data.activity.filter(a=> a.action!=="تفاعل" && !(a.action==="إضافة"&&["painters","projects","visits"].includes(a.entity)) && !(a.action==="تعديل"&&a.entity_label==="متابعة") );
+      const totalActivities = data.painters.length+data.projects.length+data.interactions.length+data.visits.length+completedFollowups.length+otherActivity.length;
 
       const kpis=[
         {label:"دهانون جدد",value:data.painters.length,color:"#16A34A",icon:"brush"},
@@ -1596,66 +1597,116 @@ const DEFAULT_CATALOG = [
         {label:"أنشطة أخرى",value:otherActivity.length,color:"#64748B",icon:"layers"},
       ];
 
-      const events=[];
-      data.painters.forEach(p=>events.push({ts:p.created_at,icon:"brush",color:"#16A34A",title:"دهان جديد",subtitle:p.name+(p.city?(" · "+p.city):""),user:null,go:"painters"}));
-      data.projects.forEach(p=>events.push({ts:p.created_at,icon:"building",color:"#D97706",title:"موقع جديد",subtitle:p.name+(p.city?(" · "+p.city):""),user:null,go:"projects"}));
-      data.interactions.forEach(x=>events.push({ts:x.created_at||x.date,icon:INTERACTION_ICON[x.type]||"bolt",color:STATUS_COLORS[x.type]||"#64748B",title:x.type,subtitle:x.painter+(x.notes?(" — "+x.notes):"")+(x.quote_amount?(" ("+Number(x.quote_amount).toLocaleString()+" ر.س)"):""),user:x.user_name,go:"painters"}));
-      data.visits.forEach(v=>{ const who=[v.painter,v.contractor].filter(Boolean).join(" · "); events.push({ts:v.created_at||v.date,icon:"pin",color:"#DC2626",title:"زيارة: "+(v.target||v.type||"—"),subtitle:[v.location,who].filter(Boolean).join(" · "),user:null,go:"visits"}); });
-      otherActivity.forEach(a=>events.push({ts:a.created_at,icon:"edit",color:"#64748B",title:(a.action||"—")+" — "+(a.entity_label||a.entity||"—"),subtitle:a.record_name||"",user:a.user_name,go:null}));
-      completedFollowups.forEach(a=>events.push({ts:a.created_at,icon:"check",color:"#0891B2",title:"متابعة مكتملة",subtitle:a.record_name||"",user:a.user_name,go:null}));
-      events.sort((a,b)=>String(b.ts||"").localeCompare(String(a.ts||"")));
+      // تجميع الأنشطة في أقسام واضحة بدل جدول زمني مسطّح — بدون أي عرض للتوقيت
+      const groups=[
+        {key:"painters",title:"دهانون جدد",color:"#16A34A",icon:"brush",go:"painters",
+          items:data.painters.map(p=>({title:p.name,subtitle:p.city||"",user:null}))},
+        {key:"projects",title:"مواقع جديدة",color:"#D97706",icon:"building",go:"projects",
+          items:data.projects.map(p=>({title:p.name,subtitle:p.city||"",user:null}))},
+        {key:"interactions",title:"تفاعلات مع الدهانين",color:"#4F46E5",icon:"bolt",go:"painters",
+          items:data.interactions.map(x=>({title:x.painter||"—",subtitle:(x.notes?x.notes:"")+(x.quote_amount?(" · "+Number(x.quote_amount).toLocaleString()+" ر.س"):""),user:x.user_name,badge:x.type,badgeColor:STATUS_COLORS[x.type],badgeIcon:INTERACTION_ICON[x.type]}))},
+        {key:"visits",title:"زيارات ميدانية",color:"#DC2626",icon:"pin",go:"visits",
+          items:data.visits.map(v=>({title:v.target||v.type||"زيارة",subtitle:[v.location,[v.painter,v.contractor].filter(Boolean).join(" · ")].filter(Boolean).join(" · "),user:null}))},
+        {key:"followups",title:"متابعات مكتملة",color:"#0891B2",icon:"check",go:null,
+          items:completedFollowups.map(a=>({title:a.record_name||"—",subtitle:"تمّت متابعتها اليوم",user:a.user_name}))},
+        {key:"other",title:"أنشطة أخرى",color:"#64748B",icon:"layers",go:null,
+          items:otherActivity.map(a=>({title:(a.entity_label||a.entity||"—"),subtitle:(a.action||"—")+(a.record_name?(" · "+a.record_name):""),user:a.user_name}))},
+      ].filter(g=>g.items.length>0);
 
-      const exportHeaders=["الوقت","النوع","التفاصيل","المستخدم"];
-      const exportRows=events.map(e=>[fmtDateTime(e.ts),e.title,e.subtitle||"—",e.user||"—"]);
+      const donutData=groups.map(g=>({label:g.title,value:g.items.length,color:g.color}));
+
+      // أكثر الدهانين تفاعلاً اليوم
+      const byPainter={}; data.interactions.forEach(x=>{ if(x.painter) byPainter[x.painter]=(byPainter[x.painter]||0)+1; });
+      const topPainters=Object.entries(byPainter).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([label,value])=>({label,value}));
+
+      const exportHeaders=["التصنيف","العنصر","التفاصيل","المستخدم"];
+      const exportRows=groups.flatMap(g=>g.items.map(it=>[g.title,it.title,it.subtitle||"—",it.user||"—"]));
       const doPrint=()=>{
         let body=kpisHtml(kpis.map(k=>[k.label,k.value]));
-        body+="<h2>الجدول الزمني لأنشطة اليوم</h2>"+tableHtml(exportHeaders,exportRows);
+        groups.forEach(g=>{ body+=`<h2 style="border-right-color:${g.color};color:${g.color}">${g.title} (${g.items.length})</h2>`+tableHtml(["العنصر","التفاصيل","المستخدم"],g.items.map(it=>[it.title,it.subtitle||"—",it.user||"—"])); });
         printReport("التقرير اليومي — "+new Date().toLocaleDateString("ar"), body);
       };
 
       return (
         <div className="space-y-4">
-          <div className={"rounded-2xl p-5 "+cCard}>
-            <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white" style={{background:"linear-gradient(135deg,#4f46e5,#4338ca)"}}><Icon n="clock" s={20}/></div>
-                <div><h2 className="font-extrabold">التقرير اليومي</h2><p className={"text-xs "+cMuted}>ملخص أنشطة اليوم · {new Date().toLocaleDateString("ar-SA",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}</p></div>
+          {/* بانر رئيسي بصري */}
+          <div className="relative rounded-2xl p-6 overflow-hidden text-white lift" style={{background:"linear-gradient(135deg,#4f46e5 0%,#6d28d9 55%,#7c3aed 100%)"}}>
+            <div className="absolute -left-10 -bottom-10 w-52 h-52 rounded-full bg-white/10"/>
+            <div className="absolute left-16 -top-10 w-28 h-28 rounded-full bg-white/10"/>
+            <div className="relative flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center"><Icon n="bolt" s={26}/></div>
+                <div>
+                  <div className="text-xs font-bold text-white/80">التقرير اليومي</div>
+                  <div className="text-xl font-black">{new Date().toLocaleDateString("ar-SA",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}</div>
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl font-black leading-none">{totalActivities}</div>
+                <div className="text-[11px] font-bold text-white/80 mt-1">نشاط مُسجَّل اليوم</div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <button onClick={load} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cHover}><Icon n="refresh" s={13}/> تحديث</button>
-                <button onClick={doPrint} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cHover}><Icon n="printer" s={13}/> طباعة / PDF</button>
-                <button onClick={()=>exportRowsXLSX("التقرير اليومي","اليوم",exportHeaders,exportRows)} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cHover}><Icon n="download" s={13}/> Excel</button>
-                <button onClick={()=>exportRowsCSV("التقرير_اليومي",exportHeaders,exportRows)} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cHover}><Icon n="download" s={13}/> CSV</button>
+                <button onClick={load} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold bg-white/20 hover:bg-white/30 transition"><Icon n="refresh" s={13}/> تحديث</button>
+                <button onClick={doPrint} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold bg-white/20 hover:bg-white/30 transition"><Icon n="printer" s={13}/> طباعة / PDF</button>
+                <button onClick={()=>exportRowsXLSX("التقرير اليومي","اليوم",exportHeaders,exportRows)} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold bg-white/20 hover:bg-white/30 transition"><Icon n="download" s={13}/> Excel</button>
+                <button onClick={()=>exportRowsCSV("التقرير_اليومي",exportHeaders,exportRows)} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold bg-white/20 hover:bg-white/30 transition"><Icon n="download" s={13}/> CSV</button>
               </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              {kpis.map((k,i)=>(<Kpi key={i} label={k.label} value={k.value} color={k.color} icon={k.icon}/>))}
             </div>
           </div>
 
-          <div className={"rounded-2xl p-5 "+cCard}>
-            <div className="flex items-center gap-2 mb-4"><Icon n="list" s={16} c={cAccent}/><h3 className="font-bold text-sm">الجدول الزمني لأنشطة اليوم</h3><span className={"text-xs "+cMuted}>({events.length})</span></div>
-            {events.length===0?<ReportEmpty text="لا توجد أنشطة مسجّلة اليوم بعد."/>:(
-              <div className="relative">
-                <div className={"absolute top-0 bottom-0 right-[19px] w-px "+cBorder} style={{borderRightWidth:1,borderRightStyle:"solid"}}/>
-                <div className="space-y-3">
-                  {events.map((e,i)=>(
-                    <div key={i} onClick={()=>e.go&&onGo&&onGo(e.go)} className={"relative flex items-start gap-3 rounded-xl p-3 "+(e.go?"cursor-pointer "+cHover:"")+" "+cTrack}>
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0 shadow-sm z-10" style={{background:e.color}}><Icon n={e.icon} s={16}/></div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="font-bold text-sm truncate">{e.title}</span>
-                          <span className={"text-[11px] font-semibold shrink-0 "+cMuted}>{fmtTime(e.ts)}</span>
-                        </div>
-                        {e.subtitle&&<div className={"text-xs mt-0.5 "+cMuted}>{e.subtitle}</div>}
-                        {e.user&&<div className="mt-1"><Pill text={"بواسطة: "+e.user} color="#64748B"/></div>}
-                      </div>
-                    </div>
-                  ))}
+          {/* كروت KPI */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {kpis.map((k,i)=>(<Kpi key={i} label={k.label} value={k.value} color={k.color} icon={k.icon}/>))}
+          </div>
+
+          {totalActivities===0?(
+            <ReportEmpty text="لا توجد أنشطة مسجّلة اليوم بعد. أول نشاط يُسجَّل هيظهر هنا فورًا."/>
+          ):(
+            <>
+              {/* توزيع الأنشطة + الأكثر تفاعلاً */}
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                <div className={"lg:col-span-2 rounded-2xl p-5 "+cCard}>
+                  <div className="flex items-center gap-2 mb-4"><Icon n="chart" s={16} c={cAccent}/><h3 className="font-bold text-sm">توزيع أنشطة اليوم</h3></div>
+                  <Donut data={donutData} size={150} centerLabel="نشاط"/>
+                </div>
+                <div className={"lg:col-span-3 rounded-2xl p-5 "+cCard}>
+                  <div className="flex items-center gap-2 mb-4"><Icon n="trophy" s={16} c={"#9333EA"}/><h3 className="font-bold text-sm">الأكثر تفاعلاً اليوم</h3></div>
+                  {topPainters.length?<Bars data={topPainters}/>:<ReportEmpty text="لا توجد تفاعلات مرتبطة بدهانين بعد اليوم."/>}
                 </div>
               </div>
-            )}
-          </div>
+
+              {/* أقسام الأنشطة */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                {groups.map(g=>(
+                  <div key={g.key} className={"relative rounded-2xl p-5 overflow-hidden fade "+cCard}>
+                    <div className="absolute top-0 right-0 h-full w-1.5" style={{background:g.color}}/>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-sm" style={{background:`linear-gradient(135deg, ${g.color}, ${g.color}bb)`}}><Icon n={g.icon} s={16}/></div>
+                        <h3 className="font-bold text-sm">{g.title}</h3>
+                      </div>
+                      <span className="text-xs font-black rounded-full px-2.5 py-1" style={{color:g.color,background:g.color+"1a"}}>{g.items.length}</span>
+                    </div>
+                    <div className="space-y-1.5 max-h-72 overflow-y-auto no-scrollbar">
+                      {g.items.map((it,i)=>(
+                        <div key={i} onClick={()=>g.go&&onGo&&onGo(g.go)} className={"flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 "+(g.go?"cursor-pointer "+cHover:"")+" "+cTrack}>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:g.color}}/>
+                              <span className="font-bold text-xs truncate">{it.title}</span>
+                              {it.badge&&<Pill text={it.badge} color={it.badgeColor}/>}
+                            </div>
+                            {it.subtitle&&<div className={"text-[11px] mt-0.5 truncate "+cMuted}>{it.subtitle}</div>}
+                          </div>
+                          {it.user&&<span className={"text-[10px] font-bold shrink-0 rounded-full px-2 py-1 "+cTrack+" "+cMuted}>{it.user}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       );
     }
