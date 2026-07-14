@@ -67,7 +67,7 @@
       "دهان":"#4F46E5","مشروع":"#D97706","موقع":"#D97706","معرض":"#7C3AED","مقاول":"#0891B2","مطور عقاري":"#0891B2","استشاري":"#2563EB",
       "VIP":"#7C3AED","واعد":"#16A34A","يحتاج متابعة":"#DC2626","عادي":"#64748B",
       "مجدولة":"#2563EB","تمت":"#16A34A","مؤجلة":"#D97706","ملغاة":"#94A3B8","متأخرة":"#DC2626",
-      "واتساب":"#16A34A","مكالمة":"#2563EB","رسالة نصية":"#7C3AED","زيارة ميدانية":"#D97706",
+      "واتساب":"#16A34A","مكالمة":"#2563EB","رسالة نصية":"#7C3AED","زيارة ميدانية":"#D97706","عرض سعر":"#9333EA",
     };
     const COLORS = ["#4F46E5","#7C3AED","#0891B2","#D97706","#16A34A","#DC2626","#0EA5E9","#9333EA"];
     const CITIES = ["جيزان","صبيا","بيش","أبو عريش","ضمد","العارضة","العيدابي","الداير","أحد المسارحة","صامطة"];
@@ -81,6 +81,8 @@
     const VISIT_TYPES = ["دهان","موقع","مطور عقاري","معرض","استشاري"];
     const CONTACT_METHODS = ["زيارة ميدانية","واتساب","مكالمة","رسالة نصية"];
     const CONTACT_ICON = {"واتساب":"link","مكالمة":"target","رسالة نصية":"list","زيارة ميدانية":"pin"};
+    const INTERACTION_TYPES = ["مكالمة","واتساب","رسالة نصية","عرض سعر","زيارة ميدانية"];
+    const INTERACTION_ICON = {"واتساب":"link","مكالمة":"target","رسالة نصية":"list","زيارة ميدانية":"pin","عرض سعر":"bolt"};
     const isSiteVisit = t => t==="موقع"||t==="مشروع";
     const isDevVisit  = t => t==="مطور عقاري"||t==="مقاول";
 
@@ -92,7 +94,7 @@
     /* وسوم ملوّنة تُعرض على الكرت الخارجي لكل قسم */
     function cardTags(table, r){
       const t=[]; const add=(text,color)=>{ if(text&&text!=="—"&&text!=="بدون"&&text!=="-") t.push({text:String(text),color:color||"#64748B"}); };
-      if(table==="painters"){ add(r.status,STATUS_COLORS[r.status]); add(r.city,"#0891B2"); if(r.priority&&r.priority!=="بدون")add("أولوية "+r.priority,PRIORITY_COLORS[r.priority]); if(r.contact_method)add(r.contact_method,STATUS_COLORS[r.contact_method]); }
+      if(table==="painters"){ add(r.status,STATUS_COLORS[r.status]); add(r.city,"#0891B2"); if(r.priority&&r.priority!=="بدون")add("أولوية "+r.priority,PRIORITY_COLORS[r.priority]); if(r.contact_method)add(r.contact_method,STATUS_COLORS[r.contact_method]); if(r.has_quote)add("عرض سعر مُقدَّم","#9333EA"); }
       else if(table==="projects"){ add(r.city,"#0891B2"); add(r.type,"#7C3AED"); if(r.painter&&r.painter!=="-")add("الدهان: "+r.painter,"#4F46E5"); if(r.contractor&&r.contractor!=="-")add(r.contractor,"#D97706"); if(r.stage)add(r.stage,"#16A34A"); }
       else if(table==="contractors"){ add(r.city,"#0891B2"); if(r.priority&&r.priority!=="بدون")add("أولوية "+r.priority,PRIORITY_COLORS[r.priority]); if(Number(r.projects_count)>0)add(r.projects_count+" موقع","#D97706"); }
       else if(table==="visits"){ add(r.type,STATUS_COLORS[r.type]); add(r.location,"#0891B2"); add(r.date,"#64748B"); }
@@ -197,6 +199,21 @@ const DEFAULT_CATALOG = [
     const mapsUrl = (lat,lng)=>`https://www.google.com/maps?q=${lat},${lng}`;
     const toArr = v=>Array.isArray(v)?v:(v?(()=>{try{const x=JSON.parse(v);return Array.isArray(x)?x:[];}catch(e){return [];}})():[]);
 
+    /* ===== واتساب: تطبيع رقم الجوال وبناء رابط المحادثة ===== */
+    function normalizePhone(phone){
+      let d=String(phone||"").replace(/[^\d]/g,"");
+      if(!d) return "";
+      if(d.startsWith("00")) d=d.slice(2);
+      if(d.startsWith("0")) d="966"+d.slice(1);
+      else if(!d.startsWith("966") && d.length===9) d="966"+d;
+      return d;
+    }
+    function waLink(phone, text){
+      const n=normalizePhone(phone);
+      if(!n) return null;
+      return `https://wa.me/${n}`+(text?("?text="+encodeURIComponent(text)):"");
+    }
+
     /* تزامن الزيارة مع الدهان/المقاول/المشروع وضخ المنتجات المرصودة في المكان الصحيح */
     async function syncVisit(visit){
       try{
@@ -287,6 +304,7 @@ const DEFAULT_CATALOG = [
         trash:<g><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></g>,
         save:<g><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></g>,
         target:<g><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></g>,
+        whatsapp:<path d="M17.6 6.3A8.9 8.9 0 0 0 3.1 16.9L2 22l5.2-1.4A8.9 8.9 0 0 0 20.9 12a8.9 8.9 0 0 0-3.3-5.7zM12 20.2a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.1 8.1 0 1 1 12 20.2zm4.4-6c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.6.1-.2.2-.6.8-.8 1-.1.2-.3.2-.5.1-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.2-.5.1-.2 0-.4 0-.5-.1-.1-.6-1.4-.8-2-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.2-.9.9-.9 2.2 0 1.3 1 2.6 1.1 2.7.1.2 2 3 4.8 4.2.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.5-.1 1.4-.6 1.6-1.1.2-.5.2-1 .1-1.1-.1-.1-.2-.2-.5-.3z"/>,
       }[n];
       return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}>{ic}</svg>;
     }
@@ -517,6 +535,88 @@ const DEFAULT_CATALOG = [
       return null;
     }
 
+    /* ===== محاولة تحديث سجل الدهان بأمان (تتجاهل الأعمدة غير الموجودة) ===== */
+    async function softUpdatePainter(name, patch){
+      let body={...patch};
+      for(let i=0;i<6;i++){
+        const r=await db.from("painters").update(body).ilike("name",name);
+        if(!r.error) return true;
+        const m=(r.error.message||"")+" "+(r.error.details||"");
+        const col=(m.match(/'([a-z_]+)' column/i)||m.match(/column "?([a-z_]+)"? of/i)||m.match(/column ([a-z_]+)/i)||[])[1];
+        if(col && col in body){ delete body[col]; continue; }
+        return false;
+      }
+      return false;
+    }
+
+    /* ===== لوحة التفاعلات (مكالمات / واتساب / عروض أسعار / رسائل) لكل دهان ===== */
+    function InteractionsPanel({ painterName, refreshKey }) {
+      const [rows,setRows]=useState(null); const [error,setError]=useState("");
+      async function load(){
+        const { data, error } = await db.from("interactions").select("*").eq("painter",painterName).order("date",{ascending:false}).order("created_at",{ascending:false});
+        if(error) setError("تعذّر تحميل التفاعلات: "+error.message); else setRows(data||[]);
+      }
+      useEffect(()=>{ load(); },[painterName, refreshKey]);
+      async function removeRow(r){ if(!confirm("حذف هذا التفاعل؟")) return; await db.from("interactions").delete().eq("id",r.id); load(); }
+      if(error) return <div className="text-xs text-red-600">{error}</div>;
+      if(rows===null) return <div className={"text-xs "+cMuted}>جاري تحميل التفاعلات...</div>;
+      if(rows.length===0) return <div className={"text-xs "+cMuted}>لا توجد تفاعلات مسجّلة بعد. اضغط "تفاعل جديد" لإضافة أول تفاعل.</div>;
+      return (
+        <div className="space-y-2">
+          {rows.map(r=>(
+            <div key={r.id} className={"flex items-start gap-3 rounded-xl p-3 "+cTrack}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-white" style={{background:STATUS_COLORS[r.type]||"#64748B"}}>
+                <Icon n={INTERACTION_ICON[r.type]||"bolt"} s={15}/>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Pill text={r.type} color={STATUS_COLORS[r.type]}/>
+                  <span className={"text-[11px] "+cMuted}>{r.date||""}</span>
+                  {r.quote_amount?<span className="text-[11px] font-bold" style={{color:"#9333EA"}}>{Number(r.quote_amount).toLocaleString()} ر.س</span>:null}
+                </div>
+                {r.notes?<div className="text-xs mt-1 leading-relaxed break-words">{r.notes}</div>:null}
+                {r.user_name?<div className={"text-[10px] mt-1 "+cMuted}>بواسطة: {r.user_name}</div>:null}
+              </div>
+              <button onClick={()=>removeRow(r)} className="shrink-0 text-red-500 hover:text-red-700"><Icon n="trash" s={14}/></button>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function InteractionModal({ open, onClose, painterName, onSaved }) {
+      const [d,setD]=useState({type:"مكالمة",notes:"",quote_amount:"",date:TODAY()});
+      const [saving,setSaving]=useState(false);
+      useEffect(()=>{ if(open) setD({type:"مكالمة",notes:"",quote_amount:"",date:TODAY()}); },[open]);
+      if(!open) return null;
+      async function save(){
+        setSaving(true);
+        const payload={ painter:painterName, type:d.type, notes:d.notes||null, date:d.date||TODAY(), user_name:currentUserName(),
+          ...(d.type==="عرض سعر" && d.quote_amount ? { quote_amount:Number(d.quote_amount) } : {}) };
+        const { error } = await db.from("interactions").insert([payload]);
+        if(error){ setSaving(false); alert("تعذّر حفظ التفاعل: "+error.message+"\nتأكد من إنشاء جدول interactions في Supabase."); return; }
+        const patch={ last_interaction_date:d.date, last_interaction_type:d.type, last_contact:d.date, contact_method:d.type };
+        if(d.type==="عرض سعر"){ patch.has_quote=true; patch.last_quote_date=d.date; }
+        await softUpdatePainter(painterName, patch);
+        logActivity("تفاعل", "painters", "تفاعل ("+d.type+")", painterName);
+        setSaving(false); onSaved&&onSaved(); onClose();
+      }
+      return (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3" onClick={onClose}>
+          <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-md "+cCard}>
+            <div className="flex items-center justify-between mb-4"><div className="font-bold">تسجيل تفاعل جديد</div><button onClick={onClose} className={cMuted}><Icon n="close" s={18}/></button></div>
+            <div className="space-y-3">
+              <Sel label="نوع التفاعل" v={d.type} on={v=>setD({...d,type:v})} opts={INTERACTION_TYPES}/>
+              {d.type==="عرض سعر"&&<Inp label="قيمة العرض (اختياري)" type="number" v={d.quote_amount} on={v=>setD({...d,quote_amount:v})}/>}
+              <Inp label="التاريخ" type="date" v={d.date} on={v=>setD({...d,date:v})}/>
+              <Inp label="ملاحظات" type="text" v={d.notes} on={v=>setD({...d,notes:v})}/>
+            </div>
+            <button onClick={save} disabled={saving} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 disabled:opacity-50 "+cBtn}>{saving?"جاري الحفظ...":"حفظ التفاعل"}</button>
+          </div>
+        </div>
+      );
+    }
+
     /* ===== قسم عام ===== */
     function Section({ cfg, onGo, prefill, clearPrefill }) {
       const [rows,setRows]=useState([]); const [loading,setLoading]=useState(true); const [error,setError]=useState("");
@@ -524,6 +624,8 @@ const DEFAULT_CATALOG = [
       const [view,setView]=useState("list"); const [selId,setSelId]=useState(null);
       const [editor,setEditor]=useState(null); const [saving,setSaving]=useState(false); const [geoMsg,setGeoMsg]=useState("");
       const [refOpts,setRefOpts]=useState({});
+      const [quoteFilter,setQuoteFilter]=useState("الكل");
+      const [showInteraction,setShowInteraction]=useState(false); const [interactionsKey,setInteractionsKey]=useState(0);
 
       async function load(){ setLoading(true);setError("");
         const {data,error}=await db.from(cfg.table).select("*").order("created_at",{ascending:false});
@@ -573,7 +675,8 @@ const DEFAULT_CATALOG = [
       const filterDefs=(cfg.filterKeys||[]).map(key=>{ const f=cfg.fields.find(x=>x.key===key);
         const opts=[...new Set(rows.map(r=>r[key]).filter(v=>v!==null&&v!==undefined&&v!==""))].map(String).sort();
         return {key,label:f?f.label:key,opts}; });
-      const filtered=rows.filter(r=> (q===""||cfg.fields.some(f=>String(r[f.key]||"").includes(q))) && filterDefs.every(fd=>!filters[fd.key]||filters[fd.key]==="الكل"||String(r[fd.key])===filters[fd.key]) );
+      const filtered=rows.filter(r=> (q===""||cfg.fields.some(f=>String(r[f.key]||"").includes(q))) && filterDefs.every(fd=>!filters[fd.key]||filters[fd.key]==="الكل"||String(r[fd.key])===filters[fd.key])
+        && (cfg.table!=="painters"||quoteFilter==="الكل"||(quoteFilter==="لديه عرض سعر"?!!r.has_quote:!r.has_quote)) );
       const kpis=cfg.kpis?cfg.kpis(rows):[];
       const inputType=f=>f.type==="number"?"number":f.type==="date"?"date":"text";
       function fmt(f,v){ if(f.key==="rating")return <Stars n={Number(v)||0}/>; if(f.type==="images")return toArr(v).length+" صورة"; if(f.key==="risk_level")return <Pill text={v||"—"} color={RISK_COLORS[v]}/>; if(f.type==="number")return (Number(v)||0).toLocaleString()+(f.suffix||""); return v||"—"; }
@@ -594,7 +697,7 @@ const DEFAULT_CATALOG = [
                     <div className="w-16 h-16 rounded-2xl bg-white/20 border border-white/30 font-extrabold text-2xl flex items-center justify-center shrink-0">{initial(selected)}</div>
                     <div className="min-w-0 flex-1"><h2 className="text-xl font-extrabold truncate">{selected[cfg.fields[0].key]}</h2>
                       <div className="mt-1.5 text-xs text-white/90 truncate">{cfg.subtitle(selected)}</div>
-                      <div className="mt-2 flex items-center gap-2 flex-wrap">{cfg.statusField&&selected[cfg.statusField]?<span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/25">{selected[cfg.statusField]}</span>:null}{(selected.lat&&selected.lng)?<a href={mapsUrl(selected.lat,selected.lng)} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full"><Icon n="pin" s={13}/> الخرائط</a>:null}</div>
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">{cfg.statusField&&selected[cfg.statusField]?<span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/25">{selected[cfg.statusField]}</span>:null}{(selected.lat&&selected.lng)?<a href={mapsUrl(selected.lat,selected.lng)} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full"><Icon n="pin" s={13}/> الخرائط</a>:null}{selected.phone?<a href={waLink(selected.phone)} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full"><Icon n="whatsapp" s={13}/> واتساب</a>:null}{selected.phone?<a href={"tel:"+selected.phone} className="inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full"><Icon n="target" s={13}/> اتصال</a>:null}</div>
                     </div>
                   </div>
                 </div>
@@ -623,6 +726,15 @@ const DEFAULT_CATALOG = [
                 <div className="flex items-center gap-2 mb-4"><Icon n="link" s={16} c={cAccent}/><h3 className="font-bold text-sm">العلاقات والنشاط المرتبط</h3></div>
                 <RelatedPanel cfg={cfg} record={selected} onGo={onGo}/>
               </div>
+              {cfg.table==="painters"&&(
+                <div className={"rounded-2xl p-5 "+cCard}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2"><Icon n="bolt" s={16} c={cAccent}/><h3 className="font-bold text-sm">التفاعلات</h3></div>
+                    <button onClick={()=>setShowInteraction(true)} className={"rounded-lg px-3 py-1.5 text-xs font-bold "+cBtn}>+ تفاعل جديد</button>
+                  </div>
+                  <InteractionsPanel painterName={selected.name} refreshKey={interactionsKey}/>
+                </div>
+              )}
             </div>
           )}
 
@@ -639,6 +751,13 @@ const DEFAULT_CATALOG = [
                       {fd.opts.map(o=><option key={o} value={o}>{o}</option>)}
                     </select>
                   ))}
+                  {cfg.table==="painters"&&(
+                    <select value={quoteFilter} onChange={e=>setQuoteFilter(e.target.value)} className={"rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none "+cInput}>
+                      <option value="الكل">عرض السعر: الكل</option>
+                      <option value="لديه عرض سعر">لديه عرض سعر</option>
+                      <option value="بدون عرض سعر">بدون عرض سعر</option>
+                    </select>
+                  )}
                   <div className="flex-1"/>
                   <div className={"flex rounded-lg overflow-hidden border border-gray-200 dark:border-slate-700"}>
                     <button onClick={()=>setVmode("cards")} className={"p-1.5 "+(vmode==="cards"?"bg-indigo-600 text-white":cMuted)} title="كروت"><Icon n="grid" s={16}/></button>
@@ -658,6 +777,7 @@ const DEFAULT_CATALOG = [
                   {filtered.map(r=>{ const col=avatarBg(r);
                     return (<button key={r.id} onClick={()=>{setSelId(r.id);setView("detail");}} className={"relative rounded-2xl p-4 text-right transition lift overflow-hidden "+cCard}>
                       <div className="absolute top-0 right-0 h-full w-1.5" style={{background:col}}/>
+                      {r.phone?<a href={waLink(r.phone)} target="_blank" onClick={e=>e.stopPropagation()} title="واتساب" className="absolute top-2.5 left-2.5 w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md hover:brightness-110"><Icon n="whatsapp" s={14}/></a>:null}
                       <div className="flex items-center gap-3 min-w-0 mb-3">
                         <div className="w-11 h-11 rounded-xl text-white font-extrabold flex items-center justify-center shrink-0 shadow-md" style={{background:`linear-gradient(135deg, ${col}, ${col}bb)`}}>{initial(r)}</div>
                         <div className="min-w-0 flex-1"><div className="font-extrabold text-sm truncate">{r[cfg.fields[0].key]}</div>{cfg.table==="painters"&&Number(r.rating)>0?<div className="mt-0.5"><Stars n={Number(r.rating)}/></div>:null}</div>
@@ -674,6 +794,7 @@ const DEFAULT_CATALOG = [
                         <div className="w-10 h-10 rounded-xl text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-sm" style={{background:`linear-gradient(135deg, ${col}, ${col}bb)`}}>{initial(r)}</div>
                         <div className="min-w-0 flex-1"><div className="font-extrabold text-sm truncate mb-1">{r[cfg.fields[0].key]}</div><TagRow table={cfg.table} r={r} max={4}/></div>
                       </div>
+                      {r.phone?<a href={waLink(r.phone)} target="_blank" onClick={e=>e.stopPropagation()} title="واتساب" className="shrink-0 w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md hover:brightness-110"><Icon n="whatsapp" s={15}/></a>:null}
                       <Icon n="chevron" s={16} c={cMuted+" shrink-0"}/>
                     </button>);})}
                 </div>
@@ -699,6 +820,10 @@ const DEFAULT_CATALOG = [
                 <button onClick={save} disabled={saving} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 disabled:opacity-50 "+cBtn}>{saving?"جاري الحفظ...":"حفظ"}</button>
               </div>
             </div>
+          )}
+          {cfg.table==="painters"&&selected&&(
+            <InteractionModal open={showInteraction} onClose={()=>setShowInteraction(false)} painterName={selected.name}
+              onSaved={()=>{ setInteractionsKey(k=>k+1); load(); }}/>
           )}
         </div>
       );
