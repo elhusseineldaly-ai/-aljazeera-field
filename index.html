@@ -852,9 +852,8 @@ const DEFAULT_CATALOG = [
               {vmode==="cards"?(
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                   {filtered.map(r=>{ const col=avatarBg(r);
-                    return (<button key={r.id} onClick={()=>{setSelId(r.id);setView("detail");}} className={"relative rounded-2xl p-4 text-right transition lift overflow-hidden "+(r.phone?"pb-9 ":"")+cCard}>
+                    return (<button key={r.id} onClick={()=>{setSelId(r.id);setView("detail");}} className={"relative rounded-2xl p-4 text-right transition lift overflow-hidden "+cCard}>
                       <div className="absolute top-0 right-0 h-full w-1.5" style={{background:col}}/>
-                      {r.phone?<WhatsAppButton phone={r.phone} iconOnly size={14} className="absolute bottom-2.5 left-2.5 z-10"/>:null}
                       <div className="flex items-center gap-3 min-w-0 mb-3">
                         <div className="w-11 h-11 rounded-xl text-white font-extrabold flex items-center justify-center shrink-0 shadow-md" style={{background:`linear-gradient(135deg, ${col}, ${col}bb)`}}>{initial(r)}</div>
                         <div className="min-w-0 flex-1"><div className="font-extrabold text-sm truncate">{r[cfg.fields[0].key]}</div>{cfg.table==="painters"&&Number(r.rating)>0?<div className="mt-0.5"><Stars n={Number(r.rating)}/></div>:null}</div>
@@ -871,7 +870,6 @@ const DEFAULT_CATALOG = [
                         <div className="w-10 h-10 rounded-xl text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-sm" style={{background:`linear-gradient(135deg, ${col}, ${col}bb)`}}>{initial(r)}</div>
                         <div className="min-w-0 flex-1"><div className="font-extrabold text-sm truncate mb-1">{r[cfg.fields[0].key]}</div><TagRow table={cfg.table} r={r} max={4}/></div>
                       </div>
-                      {r.phone?<WhatsAppButton phone={r.phone} iconOnly size={15} className="shrink-0"/>:null}
                       <Icon n="chevron" s={16} c={cMuted+" shrink-0"}/>
                     </button>);})}
                 </div>
