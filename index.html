@@ -209,19 +209,22 @@ const DEFAULT_CATALOG = [
       return d;
     }
     const isAndroid = ()=>/Android/i.test(navigator.userAgent||"");
-    /* يبني رابطين: عادي وبزنس. على أندرويد نستهدف حزمة التطبيق مباشرة (com.whatsapp / com.whatsapp.w4b)
-       وعلى باقي الأجهزة (آيفون وغيره) نستخدم wa.me لأن نظام التشغيل هو من يحدد التطبيق. */
+    /* ملاحظة مهمة: نسخ "المضاعف/Dual Messenger" في سامسونج بتستخدم نفس اسم حزمة واتساب الأصلي (com.whatsapp)
+       فمفيش طريقة نفتح بيها نسخة بعينها منها برابط. الحل العملي: نسيب رابط "واتساب عادي" عام بدون
+       تحديد حزمة، عشان نظام أندرويد نفسه يعرض قائمة اختيار كل نسخ واتساب المثبتة (الأصلية + المضاعفة)
+       بشرط إن مفيش تطبيق افتراضي متحدد لفتح روابط واتساب (نوضّح ده للمستخدم في القائمة).
+       "واتساب بزنس" بس هو اللي له حزمة مستقلة فعلاً (com.whatsapp.w4b) فبنستهدفها مباشرة وبثقة. */
     function waLinks(phone, text){
       const n=normalizePhone(phone);
       if(!n) return null;
       const t=text?("&text="+encodeURIComponent(text)):"";
+      const web=`https://wa.me/${n}`+(text?("?text="+encodeURIComponent(text)):"");
       if(isAndroid()){
         return {
-          regular:`intent://send?phone=${n}${t}#Intent;scheme=smsto;package=com.whatsapp;end`,
+          regular: web, // بدون تحديد حزمة، حتى يظهر اختيار أندرويد بين كل نسخ واتساب المثبتة
           business:`intent://send?phone=${n}${t}#Intent;scheme=smsto;package=com.whatsapp.w4b;end`,
         };
       }
-      const web=`https://wa.me/${n}`+(text?("?text="+encodeURIComponent(text)):"");
       return { regular:web, business:web };
     }
     function waLink(phone, text){ const l=waLinks(phone,text); return l?l.regular:null; }
@@ -244,9 +247,10 @@ const DEFAULT_CATALOG = [
             <Icon n="whatsapp" s={size}/>{!iconOnly&&(label||"واتساب")}
           </span>
           {open&&(
-            <div dir="rtl" className={"absolute z-40 mt-1.5 top-full right-0 w-44 rounded-xl overflow-hidden shadow-xl "+cCard}>
-              <a href={links.regular} target="_blank" onClick={()=>setOpen(false)} className={"flex items-center gap-2 px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-100 "+cHover}><Icon n="whatsapp" s={14} c="text-emerald-500"/> واتساب عادي</a>
+            <div dir="rtl" className={"absolute z-40 mt-1.5 top-full right-0 w-60 rounded-xl overflow-hidden shadow-xl "+cCard}>
+              <a href={links.regular} target="_blank" onClick={()=>setOpen(false)} className={"flex items-center gap-2 px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-100 "+cHover}><Icon n="whatsapp" s={14} c="text-emerald-500"/> واتساب (سيسألك اختَر أي نسخة)</a>
               <a href={links.business} target="_blank" onClick={()=>setOpen(false)} className={"flex items-center gap-2 px-3 py-2.5 text-xs font-bold border-t text-slate-700 dark:text-slate-100 "+cBorder+" "+cHover}><Icon n="whatsapp" s={14} c="text-emerald-700"/> واتساب بزنس</a>
+              <div className={"px-3 py-2 text-[10px] leading-relaxed border-t "+cBorder+" "+cMuted}>لو الخيار الأول بيفتح نسخة واحدة على طول بدون ما يسألك: امسح التطبيق الافتراضي من إعدادات الأندرويد (إعدادات ← التطبيقات ← واتساب ← فتح افتراضيًا ← مسح الإعدادات الافتراضية)، وبعدها هيسألك تختار أي نسخة (المصري/السعودي Dual) في كل مرة.</div>
             </div>
           )}
         </div>
@@ -848,9 +852,9 @@ const DEFAULT_CATALOG = [
               {vmode==="cards"?(
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                   {filtered.map(r=>{ const col=avatarBg(r);
-                    return (<button key={r.id} onClick={()=>{setSelId(r.id);setView("detail");}} className={"relative rounded-2xl p-4 text-right transition lift overflow-hidden "+cCard}>
+                    return (<button key={r.id} onClick={()=>{setSelId(r.id);setView("detail");}} className={"relative rounded-2xl p-4 text-right transition lift overflow-hidden "+(r.phone?"pb-9 ":"")+cCard}>
                       <div className="absolute top-0 right-0 h-full w-1.5" style={{background:col}}/>
-                      {r.phone?<WhatsAppButton phone={r.phone} iconOnly size={14} className="absolute top-2.5 left-2.5 z-10"/>:null}
+                      {r.phone?<WhatsAppButton phone={r.phone} iconOnly size={14} className="absolute bottom-2.5 left-2.5 z-10"/>:null}
                       <div className="flex items-center gap-3 min-w-0 mb-3">
                         <div className="w-11 h-11 rounded-xl text-white font-extrabold flex items-center justify-center shrink-0 shadow-md" style={{background:`linear-gradient(135deg, ${col}, ${col}bb)`}}>{initial(r)}</div>
                         <div className="min-w-0 flex-1"><div className="font-extrabold text-sm truncate">{r[cfg.fields[0].key]}</div>{cfg.table==="painters"&&Number(r.rating)>0?<div className="mt-0.5"><Stars n={Number(r.rating)}/></div>:null}</div>
