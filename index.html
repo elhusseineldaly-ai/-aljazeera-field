@@ -18,6 +18,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     :root{ --brand:#4f46e5; --brand2:#7c3aed; }
     *{ font-family:'Tajawal','Segoe UI',Tahoma,sans-serif; }
@@ -38,7 +39,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect, useRef, useMemo } = React;
 
     const SUPABASE_URL = "https://pdjjlzmldrvhhurtulma.supabase.co";
     const SUPABASE_KEY = "sb_publishable_6bwC9B-Q20VG09Bq6bUXow_6xq3qdGh";
@@ -362,6 +363,10 @@ const DEFAULT_CATALOG = [
         trash:<g><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></g>,
         save:<g><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></g>,
         target:<g><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></g>,
+        doc:<g><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></g>,
+        user:<g><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></g>,
+        download:<g><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/></g>,
+        refresh:<g><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></g>,
       }[n];
       return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}>{ic}</svg>;
     }
@@ -520,6 +525,27 @@ const DEFAULT_CATALOG = [
       const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
       const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=cfg.title+".csv"; a.click(); URL.revokeObjectURL(a.href);
     }
+
+    /* ===== أدوات تصدير عامة لصفحات التقارير (CSV / Excel حقيقي عبر SheetJS) ===== */
+    function exportRowsCSV(filename, headers, rows){
+      const esc=v=>'"'+String(v??"—").replace(/"/g,'""')+'"';
+      const csv="\uFEFF"+[headers.map(esc).join(","),...rows.map(r=>r.map(esc).join(","))].join("\n");
+      const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
+      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename+".csv"; a.click(); URL.revokeObjectURL(a.href);
+    }
+    function exportRowsXLSX(filename, sheetName, headers, rows){
+      try{
+        const ws=XLSX.utils.aoa_to_sheet([headers, ...rows.map(r=>r.map(c=>c==null?"—":c))]);
+        ws["!cols"]=headers.map((h,i)=>({ wch: Math.min(40, Math.max(10, String(h).length+2, ...rows.map(r=>String(r[i]??"").length+2))) }));
+        const wb=XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0,31));
+        XLSX.writeFile(wb, filename+".xlsx");
+      }catch(e){ alert("تعذّر إنشاء ملف Excel، جرّب تصدير CSV بدلاً منه."); }
+    }
+    /* تنسيق تاريخ/وقت موحّد للتقارير */
+    function fmtDateTime(ts){ if(!ts) return "—"; const d=new Date(ts); if(isNaN(d.getTime())) return String(ts);
+      return d.toLocaleDateString("ar-SA",{day:"2-digit",month:"2-digit",year:"numeric"})+" · "+d.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}); }
+    function fmtTime(ts){ if(!ts) return "—"; const d=new Date(ts); if(isNaN(d.getTime())) return "—"; return d.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}); }
 
     /* ===== لوحة العلاقات داخل التفاصيل ===== */
     function RelatedPanel({ cfg, record, onGo }) {
@@ -1496,7 +1522,332 @@ const DEFAULT_CATALOG = [
     }
     function kpisHtml(items){ return `<div class="kpis">${items.map(([l,v])=>`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("")}</div>`; }
 
-    function ReportsPage() {
+    /* ===== سكيليتون تحميل عام للتقارير ===== */
+    function ReportSkeleton(){
+      return (<div className="space-y-4 animate-pulse">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">{Array.from({length:5}).map((_,i)=>(<div key={i} className={"h-20 rounded-2xl "+cTrack}/>))}</div>
+        <div className={"h-64 rounded-2xl "+cTrack}/>
+      </div>);
+    }
+    function ReportError({ msg, onRetry }){
+      return (<div className={"rounded-2xl p-8 text-center "+cCard}>
+        <div className="w-12 h-12 rounded-full bg-red-500/10 text-red-600 flex items-center justify-center mx-auto mb-3"><Icon n="close" s={20}/></div>
+        <div className="font-bold text-sm mb-1">تعذّر تحميل التقرير</div>
+        <div className={"text-xs mb-4 "+cMuted}>{msg}</div>
+        <button onClick={onRetry} className={"inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold "+cBtn}><Icon n="refresh" s={14}/> إعادة المحاولة</button>
+      </div>);
+    }
+    function ReportEmpty({ text }){
+      return (<div className={"rounded-2xl p-10 text-center "+cTrack}>
+        <div className={"w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 bg-white dark:bg-slate-900"}><Icon n="doc" s={20} c={cMuted}/></div>
+        <div className={"text-sm font-bold "+cMuted}>{text}</div>
+      </div>);
+    }
+
+    /* ===== التقرير اليومي: ملخص كل ما حدث اليوم تلقائياً ===== */
+    function DailyActivityReport({ onGo }) {
+      const [data,setData]=useState(null);
+      const [error,setError]=useState("");
+      const [loading,setLoading]=useState(true);
+      const today = TODAY();
+
+      async function load(){
+        setLoading(true); setError("");
+        try{
+          const [p,pr,it,vi] = await Promise.all([
+            db.from("painters").select("id,name,city,created_at").gte("created_at", today),
+            db.from("projects").select("id,name,city,created_at").gte("created_at", today),
+            db.from("interactions").select("*").eq("date", today),
+            db.from("visits").select("*").eq("date", today),
+          ]);
+          if(p.error) throw new Error(p.error.message);
+          if(pr.error) throw new Error(pr.error.message);
+          if(it.error) throw new Error("تأكد من إنشاء جدول interactions: "+it.error.message);
+          if(vi.error) throw new Error(vi.error.message);
+          let activity=[];
+          try{ const al=await db.from("activity_log").select("*").gte("created_at", today).order("created_at",{ascending:false}).limit(500); activity=al.data||[]; }catch(e){ activity=[]; }
+          setData({ painters:p.data||[], projects:pr.data||[], interactions:it.data||[], visits:vi.data||[], activity });
+        }catch(e){ setError(e.message||"تعذّر تحميل نشاط اليوم"); }
+        finally{ setLoading(false); }
+      }
+      useEffect(()=>{ load(); },[]);
+
+      if(loading) return <ReportSkeleton/>;
+      if(error) return <ReportError msg={error} onRetry={load}/>;
+      if(!data) return null;
+
+      const calls=data.interactions.filter(x=>x.type==="مكالمة");
+      const wa=data.interactions.filter(x=>x.type==="واتساب");
+      const quotes=data.interactions.filter(x=>x.type==="عرض سعر");
+      const notesRows=data.interactions.filter(x=>x.notes&&String(x.notes).trim());
+      const completedFollowups=data.activity.filter(a=>a.action==="تعديل"&&a.entity_label==="متابعة");
+      const otherActivity=data.activity.filter(a=> a.action!=="تفاعل" && !(a.action==="إضافة"&&["painters","projects","visits"].includes(a.entity)) && !(a.action==="تعديل"&&a.entity_label==="متابعة") );
+
+      const kpis=[
+        {label:"دهانون جدد",value:data.painters.length,color:"#16A34A",icon:"brush"},
+        {label:"مواقع جديدة",value:data.projects.length,color:"#D97706",icon:"building"},
+        {label:"تفاعلات مسجّلة",value:data.interactions.length,color:"#4F46E5",icon:"bolt"},
+        {label:"عروض أسعار",value:quotes.length,color:"#9333EA",icon:"trophy"},
+        {label:"متابعات مكتملة",value:completedFollowups.length,color:"#0891B2",icon:"check"},
+        {label:"مكالمات هاتفية",value:calls.length,color:"#2563EB",icon:"target"},
+        {label:"محادثات واتساب",value:wa.length,color:"#16A34A",icon:"whatsapp"},
+        {label:"ملاحظات مضافة",value:notesRows.length,color:"#7C3AED",icon:"doc"},
+        {label:"زيارات منجزة",value:data.visits.length,color:"#DC2626",icon:"pin"},
+        {label:"أنشطة أخرى",value:otherActivity.length,color:"#64748B",icon:"layers"},
+      ];
+
+      const events=[];
+      data.painters.forEach(p=>events.push({ts:p.created_at,icon:"brush",color:"#16A34A",title:"دهان جديد",subtitle:p.name+(p.city?(" · "+p.city):""),user:null,go:"painters"}));
+      data.projects.forEach(p=>events.push({ts:p.created_at,icon:"building",color:"#D97706",title:"موقع جديد",subtitle:p.name+(p.city?(" · "+p.city):""),user:null,go:"projects"}));
+      data.interactions.forEach(x=>events.push({ts:x.created_at||x.date,icon:INTERACTION_ICON[x.type]||"bolt",color:STATUS_COLORS[x.type]||"#64748B",title:x.type,subtitle:x.painter+(x.notes?(" — "+x.notes):"")+(x.quote_amount?(" ("+Number(x.quote_amount).toLocaleString()+" ر.س)"):""),user:x.user_name,go:"painters"}));
+      data.visits.forEach(v=>{ const who=[v.painter,v.contractor].filter(Boolean).join(" · "); events.push({ts:v.created_at||v.date,icon:"pin",color:"#DC2626",title:"زيارة: "+(v.target||v.type||"—"),subtitle:[v.location,who].filter(Boolean).join(" · "),user:null,go:"visits"}); });
+      otherActivity.forEach(a=>events.push({ts:a.created_at,icon:"edit",color:"#64748B",title:(a.action||"—")+" — "+(a.entity_label||a.entity||"—"),subtitle:a.record_name||"",user:a.user_name,go:null}));
+      completedFollowups.forEach(a=>events.push({ts:a.created_at,icon:"check",color:"#0891B2",title:"متابعة مكتملة",subtitle:a.record_name||"",user:a.user_name,go:null}));
+      events.sort((a,b)=>String(b.ts||"").localeCompare(String(a.ts||"")));
+
+      const exportHeaders=["الوقت","النوع","التفاصيل","المستخدم"];
+      const exportRows=events.map(e=>[fmtDateTime(e.ts),e.title,e.subtitle||"—",e.user||"—"]);
+      const doPrint=()=>{
+        let body=kpisHtml(kpis.map(k=>[k.label,k.value]));
+        body+="<h2>الجدول الزمني لأنشطة اليوم</h2>"+tableHtml(exportHeaders,exportRows);
+        printReport("التقرير اليومي — "+new Date().toLocaleDateString("ar"), body);
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className={"rounded-2xl p-5 "+cCard}>
+            <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white" style={{background:"linear-gradient(135deg,#4f46e5,#4338ca)"}}><Icon n="clock" s={20}/></div>
+                <div><h2 className="font-extrabold">التقرير اليومي</h2><p className={"text-xs "+cMuted}>ملخص أنشطة اليوم · {new Date().toLocaleDateString("ar-SA",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}</p></div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button onClick={load} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cHover}><Icon n="refresh" s={13}/> تحديث</button>
+                <button onClick={doPrint} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cHover}><Icon n="printer" s={13}/> طباعة / PDF</button>
+                <button onClick={()=>exportRowsXLSX("التقرير اليومي","اليوم",exportHeaders,exportRows)} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cHover}><Icon n="download" s={13}/> Excel</button>
+                <button onClick={()=>exportRowsCSV("التقرير_اليومي",exportHeaders,exportRows)} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cHover}><Icon n="download" s={13}/> CSV</button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {kpis.map((k,i)=>(<Kpi key={i} label={k.label} value={k.value} color={k.color} icon={k.icon}/>))}
+            </div>
+          </div>
+
+          <div className={"rounded-2xl p-5 "+cCard}>
+            <div className="flex items-center gap-2 mb-4"><Icon n="list" s={16} c={cAccent}/><h3 className="font-bold text-sm">الجدول الزمني لأنشطة اليوم</h3><span className={"text-xs "+cMuted}>({events.length})</span></div>
+            {events.length===0?<ReportEmpty text="لا توجد أنشطة مسجّلة اليوم بعد."/>:(
+              <div className="relative">
+                <div className={"absolute top-0 bottom-0 right-[19px] w-px "+cBorder} style={{borderRightWidth:1,borderRightStyle:"solid"}}/>
+                <div className="space-y-3">
+                  {events.map((e,i)=>(
+                    <div key={i} onClick={()=>e.go&&onGo&&onGo(e.go)} className={"relative flex items-start gap-3 rounded-xl p-3 "+(e.go?"cursor-pointer "+cHover:"")+" "+cTrack}>
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0 shadow-sm z-10" style={{background:e.color}}><Icon n={e.icon} s={16}/></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="font-bold text-sm truncate">{e.title}</span>
+                          <span className={"text-[11px] font-semibold shrink-0 "+cMuted}>{fmtTime(e.ts)}</span>
+                        </div>
+                        {e.subtitle&&<div className={"text-xs mt-0.5 "+cMuted}>{e.subtitle}</div>}
+                        {e.user&&<div className="mt-1"><Pill text={"بواسطة: "+e.user} color="#64748B"/></div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ===== تقرير متابعة الدهانين: سجل تفاعل كامل لكل دهان مع فلاتر وبحث وفرز وتصدير ===== */
+    const FOLLOWUP_TYPES=[...INTERACTION_TYPES,"تحديث بيانات"];
+    function PainterFollowupReport() {
+      const cutDate=days=>{ const d=new Date(); d.setDate(d.getDate()-days); return d.toISOString().slice(0,10); };
+      const [range,setRange]=useState({from:cutDate(180),to:TODAY()});
+      const [painters,setPainters]=useState(null);
+      const [rows,setRows]=useState(null);
+      const [error,setError]=useState("");
+      const [loading,setLoading]=useState(true);
+      const [f,setF]=useState({painter:"الكل",city:"الكل",employee:"الكل",type:"الكل",status:"الكل"});
+      const [q,setQ]=useState("");
+      const [sortBy,setSortBy]=useState("date_desc");
+      const [page,setPage]=useState(1);
+      const PAGE_SIZE=25;
+
+      async function load(){
+        setLoading(true); setError("");
+        try{
+          const [p,it]=await Promise.all([
+            db.from("painters").select("name,city,status,priority"),
+            db.from("interactions").select("*").gte("date",range.from).lte("date",range.to).order("date",{ascending:false}).limit(4000),
+          ]);
+          if(p.error) throw new Error(p.error.message);
+          if(it.error) throw new Error("تأكد من إنشاء جدول interactions: "+it.error.message);
+          let al=[];
+          try{ const r=await db.from("activity_log").select("*").eq("entity","painters").eq("action","تعديل").gte("created_at",range.from).lte("created_at",range.to+"T23:59:59").order("created_at",{ascending:false}).limit(1500); al=r.data||[]; }catch(e){ al=[]; }
+          const merged=[
+            ...(it.data||[]).map(x=>({ id:"it_"+x.id, date:x.date||"", ts:x.created_at||x.date, painter:x.painter||"—", type:x.type||"—", summary:x.notes||"", result:x.quote_amount?("قيمة العرض: "+Number(x.quote_amount).toLocaleString()+" ر.س"):"", next_followup:null, user:x.user_name||"—" })),
+            ...al.filter(x=>x.entity_label!=="متابعة").map(x=>({ id:"al_"+x.id, date:String(x.created_at||"").slice(0,10), ts:x.created_at, painter:x.record_name||"—", type:"تحديث بيانات", summary:x.entity_label||"تعديل بيانات الدهان", result:"", next_followup:null, user:x.user_name||"—" })),
+          ];
+          setPainters(p.data||[]); setRows(merged);
+        }catch(e){ setError(e.message||"تعذّر تحميل تقرير المتابعة"); }
+        finally{ setLoading(false); }
+      }
+      useEffect(()=>{ load(); },[range.from,range.to]);
+      useEffect(()=>{ setPage(1); },[f,q,sortBy]);
+
+      const painterInfo=useMemo(()=>{ const m={}; (painters||[]).forEach(p=>m[p.name]={city:p.city,status:p.status}); return m; },[painters]);
+      const employees=useMemo(()=>Array.from(new Set((rows||[]).map(r=>r.user).filter(x=>x&&x!=="—"))).sort((a,b)=>a.localeCompare(b,"ar")),[rows]);
+      const painterNames=useMemo(()=>Array.from(new Set((painters||[]).map(p=>p.name).filter(Boolean))).sort((a,b)=>a.localeCompare(b,"ar")),[painters]);
+
+      const filtered=useMemo(()=>{
+        if(!rows) return [];
+        const ql=q.trim().toLowerCase();
+        let out=rows.filter(r=>{
+          if(f.painter!=="الكل"&&r.painter!==f.painter) return false;
+          if(f.employee!=="الكل"&&r.user!==f.employee) return false;
+          if(f.type!=="الكل"&&r.type!==f.type) return false;
+          if(f.city!=="الكل"&&(painterInfo[r.painter]?.city!==f.city)) return false;
+          if(f.status!=="الكل"&&(painterInfo[r.painter]?.status!==f.status)) return false;
+          if(ql&&!(r.painter+" "+r.summary+" "+r.type+" "+r.user).toLowerCase().includes(ql)) return false;
+          return true;
+        });
+        out=[...out].sort((a,b)=>{
+          if(sortBy==="date_asc") return String(a.date).localeCompare(String(b.date))||String(a.ts||"").localeCompare(String(b.ts||""));
+          if(sortBy==="painter") return String(a.painter).localeCompare(String(b.painter),"ar");
+          if(sortBy==="type") return String(a.type).localeCompare(String(b.type),"ar");
+          return String(b.date).localeCompare(String(a.date))||String(b.ts||"").localeCompare(String(a.ts||""));
+        });
+        return out;
+      },[rows,f,q,sortBy,painterInfo]);
+
+      const totalPages=Math.max(1,Math.ceil(filtered.length/PAGE_SIZE));
+      const pageRows=filtered.slice((page-1)*PAGE_SIZE,page*PAGE_SIZE);
+
+      const kQuotes=filtered.filter(r=>r.type==="عرض سعر").length;
+      const kCalls=filtered.filter(r=>r.type==="مكالمة").length;
+      const kWa=filtered.filter(r=>r.type==="واتساب").length;
+      const kPainters=new Set(filtered.map(r=>r.painter)).size;
+      const typeDonut=Object.entries(filtered.reduce((m,r)=>{m[r.type]=(m[r.type]||0)+1;return m;},{})).map(([label,value])=>({label,value,color:STATUS_COLORS[label]||"#64748B"})).sort((a,b)=>b.value-a.value);
+
+      const exportHeaders=["التاريخ","الوقت","الدهان","المدينة","الحالة","نوع التفاعل","الملخص","النتيجة","الموظف"];
+      const exportRows=filtered.map(r=>[r.date||"—",fmtTime(r.ts),r.painter,painterInfo[r.painter]?.city||"—",painterInfo[r.painter]?.status||"—",r.type,r.summary||"—",r.result||"—",r.user]);
+      const doPrint=()=>{
+        let body=kpisHtml([["سجلات مطابقة",filtered.length],["دهانون مشمولون",kPainters],["مكالمات",kCalls],["محادثات واتساب",kWa],["عروض أسعار",kQuotes]]);
+        body+="<h2>سجل التفاعلات</h2>"+tableHtml(exportHeaders,exportRows);
+        printReport("تقرير متابعة الدهانين", body);
+      };
+
+      const selCls="rounded-lg px-2.5 py-2 text-xs font-semibold outline-none "+cInput;
+
+      return (
+        <div className="space-y-4">
+          <div className={"rounded-2xl p-5 "+cCard}>
+            <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white" style={{background:"linear-gradient(135deg,#9333EA,#7C3AED)"}}><Icon n="user" s={20}/></div>
+                <div><h2 className="font-extrabold">تقرير متابعة الدهانين</h2><p className={"text-xs "+cMuted}>سجل تفاعل كامل لكل دهان — مكالمات، واتساب، عروض أسعار، زيارات وملاحظات</p></div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button onClick={load} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cHover}><Icon n="refresh" s={13}/> تحديث</button>
+                <button onClick={doPrint} disabled={!rows} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40 "+cTrack+" "+cHover}><Icon n="printer" s={13}/> طباعة / PDF</button>
+                <button onClick={()=>exportRowsXLSX("تقرير متابعة الدهانين","المتابعة",exportHeaders,exportRows)} disabled={!rows} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40 "+cTrack+" "+cHover}><Icon n="download" s={13}/> Excel</button>
+                <button onClick={()=>exportRowsCSV("تقرير_متابعة_الدهانين",exportHeaders,exportRows)} disabled={!rows} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40 "+cTrack+" "+cHover}><Icon n="download" s={13}/> CSV</button>
+              </div>
+            </div>
+
+            {/* الفلاتر */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 mb-2">
+              <label className="block col-span-1"><span className={"text-[10px] font-bold "+cMuted}>من تاريخ</span><input type="date" value={range.from} onChange={e=>setRange({...range,from:e.target.value})} className={"w-full "+selCls}/></label>
+              <label className="block col-span-1"><span className={"text-[10px] font-bold "+cMuted}>إلى تاريخ</span><input type="date" value={range.to} onChange={e=>setRange({...range,to:e.target.value})} className={"w-full "+selCls}/></label>
+              <label className="block"><span className={"text-[10px] font-bold "+cMuted}>الدهان</span><select value={f.painter} onChange={e=>setF({...f,painter:e.target.value})} className={"w-full "+selCls}><option value="الكل">الكل</option>{painterNames.map(n=><option key={n} value={n}>{n}</option>)}</select></label>
+              <label className="block"><span className={"text-[10px] font-bold "+cMuted}>المدينة</span><select value={f.city} onChange={e=>setF({...f,city:e.target.value})} className={"w-full "+selCls}><option value="الكل">الكل</option>{CITIES.map(n=><option key={n} value={n}>{n}</option>)}</select></label>
+              <label className="block"><span className={"text-[10px] font-bold "+cMuted}>الموظف</span><select value={f.employee} onChange={e=>setF({...f,employee:e.target.value})} className={"w-full "+selCls}><option value="الكل">الكل</option>{employees.map(n=><option key={n} value={n}>{n}</option>)}</select></label>
+              <label className="block"><span className={"text-[10px] font-bold "+cMuted}>نوع التفاعل</span><select value={f.type} onChange={e=>setF({...f,type:e.target.value})} className={"w-full "+selCls}><option value="الكل">الكل</option>{FOLLOWUP_TYPES.map(n=><option key={n} value={n}>{n}</option>)}</select></label>
+              <label className="block"><span className={"text-[10px] font-bold "+cMuted}>حالة الدهان</span><select value={f.status} onChange={e=>setF({...f,status:e.target.value})} className={"w-full "+selCls}><option value="الكل">الكل</option>{PAINTER_STATUSES.map(n=><option key={n} value={n}>{n}</option>)}</select></label>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative flex-1 min-w-[180px]">
+                <Icon n="search" s={14} c={"absolute top-1/2 -translate-y-1/2 right-3 "+cMuted}/>
+                <input value={q} onChange={e=>setQ(e.target.value)} placeholder="بحث بالاسم أو الملخص..." className={"w-full rounded-lg pr-9 pl-3 py-2 text-xs outline-none "+cInput}/>
+              </div>
+              <select value={sortBy} onChange={e=>setSortBy(e.target.value)} className={selCls}>
+                <option value="date_desc">الأحدث أولاً</option>
+                <option value="date_asc">الأقدم أولاً</option>
+                <option value="painter">حسب اسم الدهان</option>
+                <option value="type">حسب نوع التفاعل</option>
+              </select>
+              {(f.painter!=="الكل"||f.city!=="الكل"||f.employee!=="الكل"||f.type!=="الكل"||f.status!=="الكل"||q)&&(
+                <button onClick={()=>{setF({painter:"الكل",city:"الكل",employee:"الكل",type:"الكل",status:"الكل"});setQ("");}} className={"text-xs font-bold px-3 py-2 rounded-lg "+cTrack+" "+cHover}>مسح الفلاتر</button>
+              )}
+            </div>
+          </div>
+
+          {loading?<ReportSkeleton/>:error?<ReportError msg={error} onRetry={load}/>:(
+            <>
+              <div className={"rounded-2xl p-5 "+cCard}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                  <Kpi label="سجلات مطابقة" value={filtered.length} color="#7C3AED" icon="doc"/>
+                  <Kpi label="دهانون مشمولون" value={kPainters} color="#16A34A" icon="brush"/>
+                  <Kpi label="مكالمات" value={kCalls} color="#2563EB" icon="target"/>
+                  <Kpi label="عروض أسعار" value={kQuotes} color="#9333EA" icon="trophy"/>
+                </div>
+                {typeDonut.length>0&&(<div className="max-w-xs mx-auto sm:mx-0"><div className={"text-xs font-bold mb-2 "+cMuted}>توزيع التفاعلات حسب النوع</div><Donut data={typeDonut} size={130} centerLabel="سجل"/></div>)}
+              </div>
+
+              <div className={"rounded-2xl p-5 "+cCard}>
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h3 className="font-bold text-sm">سجل التفاعلات</h3>
+                  <span className={"text-xs "+cMuted}>{filtered.length?`عرض ${(page-1)*PAGE_SIZE+1}–${Math.min(page*PAGE_SIZE,filtered.length)} من ${filtered.length}`:""}</span>
+                </div>
+                {filtered.length===0?<ReportEmpty text="لا توجد سجلات مطابقة لهذه الفلاتر."/>:(
+                  <>
+                    <div className="overflow-x-auto -mx-1">
+                      <table className="w-full text-xs min-w-[860px]">
+                        <thead><tr className={"text-right "+cMuted}>
+                          <th className="px-2 py-2 font-bold">التاريخ / الوقت</th>
+                          <th className="px-2 py-2 font-bold">الدهان</th>
+                          <th className="px-2 py-2 font-bold">المدينة</th>
+                          <th className="px-2 py-2 font-bold">الحالة</th>
+                          <th className="px-2 py-2 font-bold">النوع</th>
+                          <th className="px-2 py-2 font-bold">الملخص</th>
+                          <th className="px-2 py-2 font-bold">النتيجة</th>
+                          <th className="px-2 py-2 font-bold">الموظف</th>
+                        </tr></thead>
+                        <tbody>
+                          {pageRows.map(r=>(
+                            <tr key={r.id} className={"border-t "+cBorder+" "+cHover}>
+                              <td className="px-2 py-2.5 whitespace-nowrap"><div className="font-semibold">{r.date||"—"}</div><div className={cMuted}>{fmtTime(r.ts)}</div></td>
+                              <td className="px-2 py-2.5 font-bold whitespace-nowrap">{r.painter}</td>
+                              <td className="px-2 py-2.5 whitespace-nowrap">{painterInfo[r.painter]?.city||"—"}</td>
+                              <td className="px-2 py-2.5 whitespace-nowrap">{painterInfo[r.painter]?.status?<Badge status={painterInfo[r.painter].status}/>:"—"}</td>
+                              <td className="px-2 py-2.5 whitespace-nowrap"><Pill text={r.type} color={STATUS_COLORS[r.type]}/></td>
+                              <td className="px-2 py-2.5 max-w-[220px] truncate" title={r.summary}>{r.summary||"—"}</td>
+                              <td className="px-2 py-2.5 max-w-[180px] truncate" title={r.result}>{r.result||"—"}</td>
+                              <td className="px-2 py-2.5 whitespace-nowrap">{r.user}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {totalPages>1&&(
+                      <div className="flex items-center justify-center gap-2 mt-4">
+                        <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1} className={"px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-30 "+cTrack+" "+cHover}>السابق</button>
+                        <span className={"text-xs font-bold "+cMuted}>صفحة {page} من {totalPages}</span>
+                        <button onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages} className={"px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-30 "+cTrack+" "+cHover}>التالي</button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
+    function LegacyReportsOverview() {
       const [data,setData]=useState(null);
       useEffect(()=>{(async()=>{
         const [p,pr,c,v,t]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*")]);
@@ -1584,7 +1935,7 @@ const DEFAULT_CATALOG = [
       return (
         <div className="space-y-4">
           <div className={"rounded-2xl p-5 "+cCard}>
-            <div className="flex items-center gap-3 pb-3 mb-4 border-b border-gray-200 dark:border-slate-800"><div className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-extrabold" style={{background:"linear-gradient(135deg,#4f46e5,#4338ca)"}}>ج</div><div><h2 className="font-extrabold">مركز التقارير</h2><p className={"text-xs "+cMuted}>{new Date().toLocaleDateString("ar")}</p></div></div>
+            <div className="flex items-center gap-3 pb-3 mb-4 border-b border-gray-200 dark:border-slate-800"><div className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-extrabold" style={{background:"linear-gradient(135deg,#4f46e5,#4338ca)"}}>ج</div><div><h2 className="font-extrabold">تقارير دورية وتصدير عام</h2><p className={"text-xs "+cMuted}>{new Date().toLocaleDateString("ar")}</p></div></div>
             {!counts?<div className={"text-sm "+cMuted}>جاري التحضير...</div>:(
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">{Object.keys(CONFIG).map(id=>(<div key={id} className={"rounded-xl p-3 "+cTrack}><div className={"text-xs "+cMuted}>{CONFIG[id].title}</div><div className={"text-xl font-extrabold "+cAccent}>{counts[id]??"—"}</div></div>))}</div>
             )}
@@ -1608,6 +1959,30 @@ const DEFAULT_CATALOG = [
             <h3 className="font-bold text-sm mb-3">تصدير البيانات (Excel/CSV)</h3>
             <div className="flex flex-wrap gap-2">{Object.keys(CONFIG).map(id=>(<button key={id} onClick={()=>dl(id)} className={"px-3 py-2 rounded-lg text-xs font-bold "+cAccent+" "+cTrack+" "+cHover}>{CONFIG[id].title}</button>))}</div>
           </div>
+        </div>
+      );
+    }
+
+    /* ===== مركز التقارير: غلاف يجمع التقرير اليومي، تقرير متابعة الدهانين، والتقارير الدورية ===== */
+    function ReportsPage({ onGo }) {
+      const [sub,setSub]=useState("daily");
+      const tabs=[
+        ["daily","التقرير اليومي","clock"],
+        ["followup","متابعة الدهانين","user"],
+        ["legacy","تقارير دورية وتصدير","printer"],
+      ];
+      return (
+        <div className="space-y-4">
+          <div className={"rounded-2xl p-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar "+cCard}>
+            {tabs.map(([k,label,icon])=>(
+              <button key={k} onClick={()=>setSub(k)} className={"flex items-center gap-1.5 shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold transition "+(sub===k?cBtn:cMuted+" "+cHover)}>
+                <Icon n={icon} s={14}/> {label}
+              </button>
+            ))}
+          </div>
+          {sub==="daily"&&<DailyActivityReport onGo={onGo}/>}
+          {sub==="followup"&&<PainterFollowupReport/>}
+          {sub==="legacy"&&<LegacyReportsOverview/>}
         </div>
       );
     }
@@ -1712,7 +2087,7 @@ const DEFAULT_CATALOG = [
               {tab==="marketshare"&&<MarketSharePage key="ms"/>}
               {tab==="insights"&&<InsightsPage key="ins" onGo={go}/>}
               {tab==="timeline"&&<Timeline key="tl"/>}
-              {tab==="reports"&&<ReportsPage key="rep"/>}
+              {tab==="reports"&&<ReportsPage key="rep" onGo={go}/>}
               {CONFIG[tab]&&<Section key={tab} cfg={CONFIG[tab]} onGo={go} prefill={prefillFor(tab)} clearPrefill={()=>setPrefill(null)}/>}
               <div className={"text-center text-xs py-4 "+cMuted}>نظام الجزيرة الميداني — مربوط بقاعدة بيانات Supabase</div>
             </main>
