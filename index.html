@@ -199,7 +199,7 @@ const DEFAULT_CATALOG = [
     const mapsUrl = (lat,lng)=>`https://www.google.com/maps?q=${lat},${lng}`;
     const toArr = v=>Array.isArray(v)?v:(v?(()=>{try{const x=JSON.parse(v);return Array.isArray(x)?x:[];}catch(e){return [];}})():[]);
 
-    /* ===== واتساب: تطبيع رقم الجوال وبناء رابط المحادثة ===== */
+    /* ===== واتساب: تطبيع رقم الجوال وبناء روابط المحادثة (عادي / بزنس) ===== */
     function normalizePhone(phone){
       let d=String(phone||"").replace(/[^\d]/g,"");
       if(!d) return "";
@@ -208,10 +208,49 @@ const DEFAULT_CATALOG = [
       else if(!d.startsWith("966") && d.length===9) d="966"+d;
       return d;
     }
-    function waLink(phone, text){
+    const isAndroid = ()=>/Android/i.test(navigator.userAgent||"");
+    /* يبني رابطين: عادي وبزنس. على أندرويد نستهدف حزمة التطبيق مباشرة (com.whatsapp / com.whatsapp.w4b)
+       وعلى باقي الأجهزة (آيفون وغيره) نستخدم wa.me لأن نظام التشغيل هو من يحدد التطبيق. */
+    function waLinks(phone, text){
       const n=normalizePhone(phone);
       if(!n) return null;
-      return `https://wa.me/${n}`+(text?("?text="+encodeURIComponent(text)):"");
+      const t=text?("&text="+encodeURIComponent(text)):"";
+      if(isAndroid()){
+        return {
+          regular:`intent://send?phone=${n}${t}#Intent;scheme=smsto;package=com.whatsapp;end`,
+          business:`intent://send?phone=${n}${t}#Intent;scheme=smsto;package=com.whatsapp.w4b;end`,
+        };
+      }
+      const web=`https://wa.me/${n}`+(text?("?text="+encodeURIComponent(text)):"");
+      return { regular:web, business:web };
+    }
+    function waLink(phone, text){ const l=waLinks(phone,text); return l?l.regular:null; }
+
+    /* زر واتساب بخيار تحديد أي تطبيق (عادي / بزنس) عند الضغط
+       className: يُطبَّق على الحاوية الخارجية (للتموضع/الحجم مثل absolute top-2.5 left-2.5)
+       btnClassName: تصميم الزر نفسه (اختياري، وإلا يُستخدم شكل افتراضي حسب iconOnly) */
+    function WhatsAppButton({ phone, className, btnClassName, size=14, label, iconOnly }) {
+      const [open,setOpen]=useState(false);
+      const ref=useRef(null);
+      useEffect(()=>{ if(!open) return; const h=e=>{ if(ref.current&&!ref.current.contains(e.target)) setOpen(false); }; document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h); },[open]);
+      if(!phone) return null;
+      const links=waLinks(phone);
+      const defaultBtn = iconOnly
+        ? "w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md hover:brightness-110"
+        : "inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full";
+      return (
+        <div ref={ref} className={"relative inline-block "+(className||"")} onClick={e=>e.stopPropagation()}>
+          <span role="button" tabIndex={0} onClick={()=>setOpen(o=>!o)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setOpen(o=>!o);}}} className={"cursor-pointer select-none "+(btnClassName||defaultBtn)}>
+            <Icon n="whatsapp" s={size}/>{!iconOnly&&(label||"واتساب")}
+          </span>
+          {open&&(
+            <div dir="rtl" className={"absolute z-40 mt-1.5 top-full right-0 w-44 rounded-xl overflow-hidden shadow-xl "+cCard}>
+              <a href={links.regular} target="_blank" onClick={()=>setOpen(false)} className={"flex items-center gap-2 px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-100 "+cHover}><Icon n="whatsapp" s={14} c="text-emerald-500"/> واتساب عادي</a>
+              <a href={links.business} target="_blank" onClick={()=>setOpen(false)} className={"flex items-center gap-2 px-3 py-2.5 text-xs font-bold border-t text-slate-700 dark:text-slate-100 "+cBorder+" "+cHover}><Icon n="whatsapp" s={14} c="text-emerald-700"/> واتساب بزنس</a>
+            </div>
+          )}
+        </div>
+      );
     }
 
     /* تزامن الزيارة مع الدهان/المقاول/المشروع وضخ المنتجات المرصودة في المكان الصحيح */
@@ -270,7 +309,11 @@ const DEFAULT_CATALOG = [
     }
 
     /* ===== أيقونات ===== */
+    const FILL_ICONS = {
+      whatsapp: <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413" />,
+    };
     function Icon({ n, s=18, c="" }) {
+      if(FILL_ICONS[n]) return <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor" className={c}>{FILL_ICONS[n]}</svg>;
       const ic={
         search:<g><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></g>,
         bell:<g><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></g>,
@@ -304,7 +347,6 @@ const DEFAULT_CATALOG = [
         trash:<g><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></g>,
         save:<g><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></g>,
         target:<g><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></g>,
-        whatsapp:<path d="M17.6 6.3A8.9 8.9 0 0 0 3.1 16.9L2 22l5.2-1.4A8.9 8.9 0 0 0 20.9 12a8.9 8.9 0 0 0-3.3-5.7zM12 20.2a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.1 8.1 0 1 1 12 20.2zm4.4-6c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.6.1-.2.2-.6.8-.8 1-.1.2-.3.2-.5.1-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.2-.5.1-.2 0-.4 0-.5-.1-.1-.6-1.4-.8-2-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.2.2-.9.9-.9 2.2 0 1.3 1 2.6 1.1 2.7.1.2 2 3 4.8 4.2.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.5-.1 1.4-.6 1.6-1.1.2-.5.2-1 .1-1.1-.1-.1-.2-.2-.5-.3z"/>,
       }[n];
       return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}>{ic}</svg>;
     }
@@ -697,7 +739,7 @@ const DEFAULT_CATALOG = [
                     <div className="w-16 h-16 rounded-2xl bg-white/20 border border-white/30 font-extrabold text-2xl flex items-center justify-center shrink-0">{initial(selected)}</div>
                     <div className="min-w-0 flex-1"><h2 className="text-xl font-extrabold truncate">{selected[cfg.fields[0].key]}</h2>
                       <div className="mt-1.5 text-xs text-white/90 truncate">{cfg.subtitle(selected)}</div>
-                      <div className="mt-2 flex items-center gap-2 flex-wrap">{cfg.statusField&&selected[cfg.statusField]?<span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/25">{selected[cfg.statusField]}</span>:null}{(selected.lat&&selected.lng)?<a href={mapsUrl(selected.lat,selected.lng)} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full"><Icon n="pin" s={13}/> الخرائط</a>:null}{selected.phone?<a href={waLink(selected.phone)} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full"><Icon n="whatsapp" s={13}/> واتساب</a>:null}{selected.phone?<a href={"tel:"+selected.phone} className="inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full"><Icon n="target" s={13}/> اتصال</a>:null}</div>
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">{cfg.statusField&&selected[cfg.statusField]?<span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/25">{selected[cfg.statusField]}</span>:null}{(selected.lat&&selected.lng)?<a href={mapsUrl(selected.lat,selected.lng)} target="_blank" className="inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full"><Icon n="pin" s={13}/> الخرائط</a>:null}{selected.phone?<WhatsAppButton phone={selected.phone} size={13}/>:null}{selected.phone?<a href={"tel:"+selected.phone} className="inline-flex items-center gap-1 text-xs font-bold bg-white/25 px-2.5 py-0.5 rounded-full"><Icon n="target" s={13}/> اتصال</a>:null}</div>
                     </div>
                   </div>
                 </div>
@@ -777,7 +819,7 @@ const DEFAULT_CATALOG = [
                   {filtered.map(r=>{ const col=avatarBg(r);
                     return (<button key={r.id} onClick={()=>{setSelId(r.id);setView("detail");}} className={"relative rounded-2xl p-4 text-right transition lift overflow-hidden "+cCard}>
                       <div className="absolute top-0 right-0 h-full w-1.5" style={{background:col}}/>
-                      {r.phone?<a href={waLink(r.phone)} target="_blank" onClick={e=>e.stopPropagation()} title="واتساب" className="absolute top-2.5 left-2.5 w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md hover:brightness-110"><Icon n="whatsapp" s={14}/></a>:null}
+                      {r.phone?<WhatsAppButton phone={r.phone} iconOnly size={14} className="absolute top-2.5 left-2.5 z-10"/>:null}
                       <div className="flex items-center gap-3 min-w-0 mb-3">
                         <div className="w-11 h-11 rounded-xl text-white font-extrabold flex items-center justify-center shrink-0 shadow-md" style={{background:`linear-gradient(135deg, ${col}, ${col}bb)`}}>{initial(r)}</div>
                         <div className="min-w-0 flex-1"><div className="font-extrabold text-sm truncate">{r[cfg.fields[0].key]}</div>{cfg.table==="painters"&&Number(r.rating)>0?<div className="mt-0.5"><Stars n={Number(r.rating)}/></div>:null}</div>
@@ -794,7 +836,7 @@ const DEFAULT_CATALOG = [
                         <div className="w-10 h-10 rounded-xl text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-sm" style={{background:`linear-gradient(135deg, ${col}, ${col}bb)`}}>{initial(r)}</div>
                         <div className="min-w-0 flex-1"><div className="font-extrabold text-sm truncate mb-1">{r[cfg.fields[0].key]}</div><TagRow table={cfg.table} r={r} max={4}/></div>
                       </div>
-                      {r.phone?<a href={waLink(r.phone)} target="_blank" onClick={e=>e.stopPropagation()} title="واتساب" className="shrink-0 w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md hover:brightness-110"><Icon n="whatsapp" s={15}/></a>:null}
+                      {r.phone?<WhatsAppButton phone={r.phone} iconOnly size={15} className="shrink-0"/>:null}
                       <Icon n="chevron" s={16} c={cMuted+" shrink-0"}/>
                     </button>);})}
                 </div>
@@ -957,11 +999,11 @@ const DEFAULT_CATALOG = [
     function Dashboard({ onGo }) {
       const [d,setD]=useState(null);
       useEffect(()=>{(async()=>{
-        const [p,pr,c,v,t]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*")]);
-        setD({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[]});
+        const [p,pr,c,v,t,i]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*"),db.from("interactions").select("*")]);
+        setD({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[],interactions:i.data||[]});
       })()},[]);
       if(!d) return <div className={"text-center py-10 text-sm "+cMuted}>جاري تحميل اللوحة...</div>;
-      const {painters,projects,contractors,visits,trainings}=d;
+      const {painters,projects,contractors,visits,trainings,interactions}=d;
       const group=(arr,key)=>{const m={};arr.forEach(x=>{const k=x[key]||"غير محدد";m[k]=(m[k]||0)+1;});return Object.entries(m).map(([label,value])=>({label,value}));};
       const sortTop=(arr,n=6)=>arr.sort((a,b)=>b.value-a.value).slice(0,n);
 
@@ -971,7 +1013,12 @@ const DEFAULT_CATALOG = [
       // المواقع والزيارات حسب المدينة
       const sitesByCity=sortTop(group(projects,"city"));
       const visitsByCity=sortTop(group(visits,"location"));
-      const citiesCovered=new Set(visits.map(v=>v.location).filter(Boolean)).size;
+      const citiesCovered=new Set([
+        ...visits.map(v=>v.location),
+        ...painters.map(p=>p.city),
+        ...projects.map(p=>p.city),
+        ...contractors.map(c=>c.city),
+      ].filter(c=>c&&CITIES.includes(c))).size;
       // أفضل الدهانين (مواقع + تقييم)
       const projByPainter={}; projects.forEach(p=>{if(p.painter)projByPainter[p.painter]=(projByPainter[p.painter]||0)+1;});
       const topPainters=sortTop(painters.map(p=>({label:p.name,value:(projByPainter[p.name]||0)*2+(Number(p.rating)||0)})).filter(x=>x.value>0),6);
@@ -996,6 +1043,14 @@ const DEFAULT_CATALOG = [
       const months=[]; const now=new Date();
       for(let i=5;i>=0;i--){ const dt=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({key:dt.toISOString().slice(0,7),label:dt.toLocaleDateString("ar",{month:"short"})}); }
       const visTrend=months.map(m=>({label:m.label,value:visits.filter(v=>String(v.date||"").slice(0,7)===m.key).length}));
+
+      // التفاعلات مع الدهانين (مكالمات / واتساب / رسائل / عروض أسعار / زيارات)
+      const totalInteractions=interactions.length;
+      const quotesCount=interactions.filter(x=>x.type==="عرض سعر").length;
+      const paintersReached=new Set(interactions.map(x=>x.painter).filter(Boolean)).size;
+      const interactionTypeDonut=group(interactions,"type").map(x=>({...x,color:STATUS_COLORS[x.label]||"#64748B"})).sort((a,b)=>b.value-a.value);
+      const interTrend=months.map(m=>({label:m.label,value:interactions.filter(x=>String(x.date||"").slice(0,7)===m.key).length}));
+      const recentInteractions=[...interactions].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,5);
 
       const recentVisits=[...visits].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).slice(0,5);
       const empty=<div className={"text-xs py-6 text-center "+cMuted}>لا بيانات كافية بعد</div>;
@@ -1024,6 +1079,42 @@ const DEFAULT_CATALOG = [
           <Card title="نشاط الزيارات" sub="آخر 6 أشهر">
             {visits.length?<TrendArea points={visTrend} color="#4F46E5"/>:empty}
           </Card>
+
+          {/* التفاعلات مع الدهانين */}
+          <div className={"rounded-2xl p-4 sm:p-5 "+cCard}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2"><div className="w-8 h-8 rounded-xl flex items-center justify-center text-white" style={{background:"linear-gradient(135deg,#9333EA,#7C3AED)"}}><Icon n="bolt" s={16}/></div><div><div className="text-sm font-bold">التفاعلات مع الدهانين</div><div className={"text-[11px] "+cMuted}>مكالمات، واتساب، رسائل، وعروض أسعار مسجّلة</div></div></div>
+              <button onClick={()=>onGo&&onGo("painters")} className={"text-xs font-bold "+cAccent}>عرض الدهانين</button>
+            </div>
+            <div className="grid grid-cols-3 gap-2.5 mb-4">
+              <Kpi label="إجمالي التفاعلات" value={totalInteractions} color="#4F46E5" icon="bolt"/>
+              <Kpi label="عروض أسعار" value={quotesCount} color="#9333EA" icon="trophy" sub="مُقدَّمة للدهانين"/>
+              <Kpi label="دهانون تم التواصل معهم" value={paintersReached} color="#16A34A" icon="brush"/>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <div className={"text-xs font-bold mb-2 "+cMuted}>توزيع التفاعلات حسب النوع</div>
+                {interactionTypeDonut.length?<Donut data={interactionTypeDonut} size={140} centerLabel="تفاعل"/>:empty}
+              </div>
+              <div>
+                <div className={"text-xs font-bold mb-2 "+cMuted}>نشاط التفاعلات — آخر 6 أشهر</div>
+                {totalInteractions?<TrendArea points={interTrend} color="#9333EA"/>:empty}
+              </div>
+            </div>
+            {recentInteractions.length>0&&(
+              <div className={"mt-4 pt-4 border-t "+cBorder}>
+                <div className={"text-xs font-bold mb-2 "+cMuted}>آخر التفاعلات</div>
+                <div className="space-y-1.5">
+                  {recentInteractions.map((x,i)=>(
+                    <button key={i} onClick={()=>onGo&&onGo("painters")} className={"w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs text-right "+cTrack+" "+cHover}>
+                      <span className="flex items-center gap-2 min-w-0"><span className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0" style={{background:STATUS_COLORS[x.type]||"#64748B"}}><Icon n={INTERACTION_ICON[x.type]||"bolt"} s={12}/></span><span className="font-bold truncate">{x.painter}</span></span>
+                      <span className="flex items-center gap-2 shrink-0"><Pill text={x.type} color={STATUS_COLORS[x.type]}/><span className={cMuted}>{x.date||""}</span></span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* الحصة السوقية + تغطية المدن بالزيارات */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
