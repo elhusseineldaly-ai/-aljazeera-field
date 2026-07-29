@@ -159,7 +159,37 @@
     .field:disabled{ opacity:.55; cursor:not-allowed; }
 
     /* طبقة تعتيم موحّدة لكل النوافذ */
-    .dlg{ background:rgba(6,8,15,.55); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); }
+    /* ══ النوافذ: ملء الشاشة على الجوال، وعمود مركزي بكامل الطول على الشاشات الكبيرة ══ */
+    @keyframes fsIn{ from{ opacity:0; transform:translateY(12px) } to{ opacity:1; transform:none } }
+    .dlg{
+      background:var(--s0) !important;
+      backdrop-filter:none !important; -webkit-backdrop-filter:none !important;
+      padding:0 !important; align-items:stretch !important; justify-content:center !important;
+    }
+    .dlg > div{
+      width:100% !important; max-width:780px !important;
+      height:100% !important; max-height:100% !important; margin:0 auto !important;
+      padding:16px !important;
+      background:var(--s1) !important;
+      border:0 !important; border-radius:0 !important; box-shadow:none !important;
+      overflow-y:auto !important; overflow-x:hidden !important;
+      overscroll-behavior:contain;
+      animation:fsIn 260ms var(--ease-out) both !important;
+    }
+    @media (min-width:1024px){
+      .dlg > div{ border-left:1px solid var(--line) !important; border-right:1px solid var(--line) !important; }
+    }
+    /* ترويسة ثابتة أعلى النافذة */
+    .sheet-head{ position:sticky; top:0; z-index:6; background:var(--s1);
+      margin:-16px -16px 14px; padding:13px 16px; border-bottom:1px solid var(--line); }
+    /* تذييل ثابت أسفل النافذة */
+    .sheet-foot{ position:sticky; bottom:0; z-index:6; background:var(--s1);
+      margin:16px -16px -16px; padding:13px 16px calc(13px + env(safe-area-inset-bottom));
+      border-top:1px solid var(--line); }
+    /* زر إجراء مفرد يبقى ظاهرًا أسفل النافذة */
+    .sticky-action{ position:sticky !important; bottom:8px; z-index:6;
+      box-shadow:0 -16px 24px -16px rgba(0,0,0,.35), var(--e-brand) !important; }
+    .dark .sticky-action{ box-shadow:0 -16px 26px -16px rgba(0,0,0,.8), var(--e-brand) !important; }
 
     /* ════════ عناصر النماذج الأصلية ════════ */
     /* سهم مخصّص للقوائم المنسدلة (على اليسار لأن الواجهة RTL) */
@@ -199,10 +229,6 @@
       display:flex; align-items:center; gap:8px; margin:2px 0 10px; }
     .form-section::after{ content:""; flex:1; height:1px; background:var(--line); }
     /* ترويسة وتذييل ثابتان في النوافذ الطويلة */
-    .sheet-head{ position:sticky; top:0; z-index:3; background:var(--s1);
-      margin:-20px -20px 16px; padding:20px 20px 12px; border-bottom:1px solid var(--line); }
-    .sheet-foot{ position:sticky; bottom:0; z-index:3; background:var(--s1);
-      margin:18px -20px -20px; padding:12px 20px 20px; border-top:1px solid var(--line); }
     /* حقل مع أيقونة داخلية */
     .field-wrap{ position:relative; }
     .field-wrap .field-ico{ position:absolute; right:10px; top:50%; transform:translateY(-50%);
@@ -850,6 +876,16 @@ const DEFAULT_CATALOG = [
        أساسيات نظام التصميم: حركة، أرقام متحرّكة، تنبيهات، حالات
        ════════════════════════════════════════════════════════════ */
 
+    /* Esc يغلق النافذة — يُستدعى دائمًا قبل أي خروج مبكر */
+    function useEscClose(active, onClose){
+      useEffect(()=>{
+        if(!active || typeof onClose!=="function") return;
+        const h=e=>{ if(e.key==="Escape"){ e.stopPropagation(); onClose(); } };
+        window.addEventListener("keydown",h);
+        return ()=>window.removeEventListener("keydown",h);
+      },[active,onClose]);
+    }
+
     /* يحترم تفضيل النظام "تقليل الحركة" */
     function useReducedMotion(){
       const [r,setR]=useState(()=>{ try{ return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(e){ return false; } });
@@ -1429,6 +1465,7 @@ const DEFAULT_CATALOG = [
     }
 
     function InteractionModal({ open, onClose, painterName, painterCity, onSaved }) {
+      useEscClose(open, onClose);
       const [d,setD]=useState({type:"مكالمة",notes:"",quote_amount:"",date:TODAY()});
       const [saving,setSaving]=useState(false);
       useEffect(()=>{ if(open) setD({type:"مكالمة",notes:"",quote_amount:"",date:TODAY()}); },[open]);
@@ -1455,7 +1492,7 @@ const DEFAULT_CATALOG = [
       return (
         <div role="dialog" aria-modal="true" className="fixed inset-0 dlg z-50 flex items-end sm:items-center justify-center p-3" onClick={onClose}>
           <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-md "+cCard}>
-            <div className="flex items-center justify-between mb-4"><div className="font-bold">تسجيل تفاعل جديد</div><button onClick={onClose} className={cMuted}><Icon n="close" s={18}/></button></div>
+            <div className="sheet-head flex items-center justify-between"><div className="font-extrabold text-sm">تسجيل تفاعل جديد</div><button onClick={onClose} className={cMuted}><Icon n="close" s={18}/></button></div>
             <div className="space-y-3">
               <Sel label="نوع التفاعل" v={d.type} on={v=>setD({...d,type:v})} opts={INTERACTION_TYPES}/>
               {d.type==="زيارة ميدانية"&&<div className={"text-[11px] rounded-lg px-3 py-2 "+cTrack+" "+cMuted}>سيتم إنشاء زيارة مقابلة تلقائياً في قسم "الزيارات" لهذا الدهان.</div>}
@@ -1463,7 +1500,7 @@ const DEFAULT_CATALOG = [
               <Inp label="التاريخ" type="date" v={d.date} on={v=>setD({...d,date:v})}/>
               <Inp label="ملاحظات" type="text" v={d.notes} on={v=>setD({...d,notes:v})}/>
             </div>
-            <button onClick={save} disabled={saving} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 disabled:opacity-50 "+cBtn}>{saving?"جاري الحفظ...":"حفظ التفاعل"}</button>
+            <button onClick={save} disabled={saving} className="btn-primary sticky-action w-full rounded-xl py-3 text-sm font-bold mt-5 disabled:opacity-50 press inline-flex items-center justify-center gap-2">{saving?<><Icon n="refresh" s={15} c="spin"/> جاري الحفظ...</>:<><Icon n="save" s={15}/> حفظ التفاعل</>}</button>
           </div>
         </div>
       );
@@ -1664,9 +1701,8 @@ const DEFAULT_CATALOG = [
           )}
 
           {editor&&(
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" role="dialog" aria-modal="true"
-              style={{background:"rgba(6,8,15,.55)",backdropFilter:"blur(3px)"}} onClick={()=>setEditor(null)}>
-              <div dir="rtl" onClick={e=>e.stopPropagation()} className="card card-raised sheet p-5 w-full sm:max-w-lg max-h-[92vh] overflow-y-auto">
+            <div className="fixed inset-0 dlg z-50 flex" role="dialog" aria-modal="true" onClick={()=>setEditor(null)}>
+              <div dir="rtl" onClick={e=>e.stopPropagation()} className="card">
                 <div className="sheet-head flex items-center justify-between">
                   <div>
                     <div className="font-extrabold text-sm">{editor.mode==="add"?cfg.addLabel:("تعديل — "+(editor.data[cfg.fields[0].key]||cfg.title))}</div>
@@ -1710,6 +1746,7 @@ const DEFAULT_CATALOG = [
     /* ===== زيارة سريعة (أقل من دقيقة) ===== */
     const VISIT_ICON={"دهان":"brush","موقع":"building","مطور عقاري":"target","معرض":"home","استشاري":"star"};
     function QuickVisit({ open, onClose, onSaved }) {
+      useEscClose(open, onClose);
       const [d,setD]=useState({target:"",type:"دهان",city:CITIES[0],results:"",next_followup:"",products:"[]",sites:""});
       const [saving,setSaving]=useState(false); const [geo,setGeo]=useState(null); const [imgs,setImgs]=useState([]);
       const [opts,setOpts]=useState({painters:[],projects:[],contractors:[]}); const [siteTxt,setSiteTxt]=useState("");
@@ -1736,7 +1773,7 @@ const DEFAULT_CATALOG = [
       }
       return (<div role="dialog" aria-modal="true" className="fixed inset-0 dlg z-50 flex items-end sm:items-center justify-center p-0 sm:p-3" onClick={onClose}>
         <div dir="rtl" onClick={e=>e.stopPropagation()} className={"w-full max-w-md max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-5 pop "+cCard}>
-          <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2 font-extrabold"><span className="w-8 h-8 rounded-xl brand-grad text-white flex items-center justify-center"><Icon n="bolt" s={16}/></span> زيارة ميدانية سريعة</div><button onClick={onClose} className={cMuted}><Icon n="close" s={20}/></button></div>
+          <div className="sheet-head flex items-center justify-between"><div className="flex items-center gap-2 font-extrabold text-sm"><span className="w-8 h-8 rounded-xl brand-grad text-white flex items-center justify-center"><Icon n="bolt" s={16}/></span> زيارة ميدانية سريعة</div><button onClick={onClose} className={cMuted}><Icon n="close" s={20}/></button></div>
           {/* المدينة */}
           <div className="mb-3"><div className={"text-xs font-bold mb-1.5 "+cMuted}>المدينة (تُحتسب حصتها السوقية)</div>
             <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">{CITIES.map(c=><button key={c} onClick={()=>setD({...d,city:c})} className={"shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold "+(d.city===c?cBtn:cTrack+" "+cMuted)}>{c}</button>)}</div></div>
@@ -1765,7 +1802,7 @@ const DEFAULT_CATALOG = [
             <ImagesField label="صور سريعة" v={imgs} on={setImgs} folder="visits"/>
             <div className={"text-xs flex items-center gap-1 "+cMuted}><Icon n="pin" s={13}/> {geo?`GPS: ${geo.lat}, ${geo.lng}`:"جاري تحديد الموقع تلقائياً..."}</div>
           </div>
-          <button onClick={save} disabled={saving} className={"w-full rounded-2xl py-3 text-sm font-extrabold mt-4 disabled:opacity-50 "+cBtn}>{saving?"جاري الحفظ والتزامن...":"حفظ الزيارة وتزامنها"}</button>
+          <button onClick={save} disabled={saving} className="btn-primary sticky-action w-full rounded-xl py-3.5 text-sm font-extrabold mt-5 disabled:opacity-50 press inline-flex items-center justify-center gap-2">{saving?<><Icon n="refresh" s={15} c="spin"/> جاري الحفظ والتزامن...</>:<><Icon n="save" s={15}/> حفظ الزيارة وتزامنها</>}</button>
         </div>
       </div>);
     }
@@ -1999,7 +2036,8 @@ const DEFAULT_CATALOG = [
       const [, force]=useState(0); const rerender=()=>force(x=>x+1);
       const [openFam,setOpenFam]=useState(CATALOG[0]?CATALOG[0].id:null);
       const [editor,setEditor]=useState(null); // {famId, idx|null, c, p}
-      const [famEditor,setFamEditor]=useState(null); // {idx|null, family, color, icon}
+      const [famEditor,setFamEditor]=useState(null);
+      useEscClose(!!(editor||famEditor), ()=>{ if(editor) setEditor(null); else setFamEditor(null); }); // {idx|null, family, color, icon}
       const [q,setQ]=useState("");
       function saveProduct(){ const {famId,idx,c,p}=editor; if(!p.trim()||!c.trim()){alert("اكتب اسم المنتج والشركة");return;}
         const next=JSON.parse(JSON.stringify(CATALOG)); const fam=next.find(f=>f.id===famId);
@@ -2059,24 +2097,24 @@ const DEFAULT_CATALOG = [
 
           {editor&&(<div role="dialog" aria-modal="true" className="fixed inset-0 dlg z-50 flex items-center justify-center p-4" onClick={()=>setEditor(null)}>
             <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-sm pop "+cCard}>
-              <div className="flex items-center justify-between mb-4"><div className="font-bold">{editor.idx==null?"إضافة منتج":"تعديل منتج"}</div><button onClick={()=>setEditor(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
+              <div className="sheet-head flex items-center justify-between"><div className="font-extrabold text-sm">{editor.idx==null?"إضافة منتج":"تعديل منتج"}</div><button onClick={()=>setEditor(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
               <div className="space-y-3">
                 <label className="block"><span className={"text-xs font-bold "+cMuted}>الشركة</span>
                   <div className="flex flex-wrap gap-1.5 mt-1.5">{Object.keys(COMPANY_COLORS).map(c=>(<button key={c} onClick={()=>setEditor({...editor,c})} className="px-2.5 py-1 rounded-lg text-xs font-bold" style={editor.c===c?{background:companyColor(c),color:"#fff"}:{background:companyColor(c)+"18",color:companyColor(c)}}>{c}</button>))}</div></label>
                 <Inp label="اسم المنتج" v={editor.p} on={v=>setEditor({...editor,p:v})}/>
               </div>
-              <button onClick={saveProduct} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 "+cBtn}>حفظ</button>
+              <button onClick={saveProduct} className="btn-primary sticky-action w-full rounded-xl py-3 text-sm font-bold mt-5 press inline-flex items-center justify-center gap-2"><Icon n="save" s={15}/> حفظ</button>
             </div></div>)}
 
           {famEditor&&(<div role="dialog" aria-modal="true" className="fixed inset-0 dlg z-50 flex items-center justify-center p-4" onClick={()=>setFamEditor(null)}>
             <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-sm pop "+cCard}>
-              <div className="flex items-center justify-between mb-4"><div className="font-bold">{famEditor.idx==null?"عائلة جديدة":"تعديل العائلة"}</div><button onClick={()=>setFamEditor(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
+              <div className="sheet-head flex items-center justify-between"><div className="font-extrabold text-sm">{famEditor.idx==null?"عائلة جديدة":"تعديل العائلة"}</div><button onClick={()=>setFamEditor(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
               <div className="space-y-3">
                 <Inp label="اسم العائلة" v={famEditor.family} on={v=>setFamEditor({...famEditor,family:v})}/>
                 <div><span className={"text-xs font-bold "+cMuted}>اللون</span><div className="flex flex-wrap gap-1.5 mt-1.5">{PALETTE.map(c=><button key={c} onClick={()=>setFamEditor({...famEditor,color:c})} className="w-7 h-7 rounded-lg" style={{background:c,outline:famEditor.color===c?"2px solid #000":"none",outlineOffset:"2px"}}/>)}</div></div>
                 <div><span className={"text-xs font-bold "+cMuted}>الأيقونة</span><div className="flex flex-wrap gap-1.5 mt-1.5">{ICONS.map(ic=><button key={ic} onClick={()=>setFamEditor({...famEditor,icon:ic})} className={"w-9 h-9 rounded-lg flex items-center justify-center "+(famEditor.icon===ic?"text-white":cTrack+" "+cMuted)} style={famEditor.icon===ic?{background:famEditor.color}:{}}><Icon n={ic} s={16}/></button>)}</div></div>
               </div>
-              <button onClick={saveFam} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 "+cBtn}>حفظ</button>
+              <button onClick={saveFam} className="btn-primary sticky-action w-full rounded-xl py-3 text-sm font-bold mt-5 press inline-flex items-center justify-center gap-2"><Icon n="save" s={15}/> حفظ</button>
             </div></div>)}
         </div>
       );
@@ -2858,12 +2896,13 @@ const DEFAULT_CATALOG = [
     }
 
     function FailedModal({ open, onClose, onChanged }){
+      useEscClose(open, onClose);
       if(!open) return null;
       const items = readFailed();
       return (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 dlg flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
           <div className={"w-full sm:max-w-lg max-h-[85vh] overflow-y-auto p-4 pop "+cCard} onClick={e=>e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
+            <div className="sheet-head flex items-center justify-between">
               <h3 className="font-extrabold text-sm text-red-600 dark:text-red-400">عمليات لم تُحفظ في السحابة</h3>
               <button onClick={onClose} className={"p-1.5 rounded-lg "+cHover}><Icon n="close" s={16}/></button>
             </div>
@@ -2883,7 +2922,7 @@ const DEFAULT_CATALOG = [
               ))}
             </div>
             {items.length>0 && (
-              <div className="flex gap-2 mt-4">
+              <div className="sheet-foot flex gap-2">
                 <button onClick={async()=>{ await retryFailed(); onChanged&&onChanged(); onClose(); }}
                   className={"flex-1 rounded-xl py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 "+cBtn}>
                   <Icon n="refresh" s={14}/> إعادة المحاولة للكل
@@ -3230,6 +3269,7 @@ const DEFAULT_CATALOG = [
 
     /* ===== تفاصيل العميل + الإجراءات السريعة ===== */
     function SrDetail({ c, onClose, onEdit, onDelete, onPatch, elite }){
+      useEscClose(!!c, onClose);
       /* كل الـ hooks قبل أي خروج مبكر — وإلا ينهار React عند إغلاق النافذة وفتحها */
       const [msg,setMsg]=useState("");
       const [copied,setCopied]=useState(false);
@@ -3245,7 +3285,7 @@ const DEFAULT_CATALOG = [
       return (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 dlg flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
           <div className={"w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto p-4 pop "+cCard} onClick={e=>e.stopPropagation()}>
-            <div className="flex items-start gap-2 mb-3">
+            <div className="sheet-head flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-extrabold text-base truncate">{c.name||"بلا اسم"}</h3>
@@ -3366,6 +3406,7 @@ const DEFAULT_CATALOG = [
 
     /* ===== نموذج الإضافة/التعديل ===== */
     function SrEditor({ editor, setEditor, onSave, elite, saving }){
+      useEscClose(!!editor, ()=>setEditor(null));
       if(!editor) return null;
       const d=editor.data;
       const set=(k,v)=>setEditor(e=>({...e,data:{...e.data,[k]:v}}));
@@ -3375,7 +3416,7 @@ const DEFAULT_CATALOG = [
       return (
         <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 dlg flex items-end sm:items-center justify-center sm:p-4" onClick={()=>setEditor(null)}>
           <div className={"w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto p-4 pop "+cCard} onClick={e=>e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
+            <div className="sheet-head flex items-center justify-between">
               <h3 className="font-extrabold text-sm">{editor.mode==="add"?"عميل معرض جديد":"تعديل بيانات العميل"}</h3>
               <button onClick={()=>setEditor(null)} className={"p-1.5 rounded-lg "+cHover}><Icon n="close" s={16}/></button>
             </div>
@@ -3436,7 +3477,7 @@ const DEFAULT_CATALOG = [
                 className={"w-full rounded-lg px-3 py-2 text-sm outline-none mt-1 "+cInput}/>
             </label>
 
-            <div className="flex gap-2">
+            <div className="sheet-foot flex gap-2">
               <button disabled={saving} onClick={onSave} className={"flex-1 rounded-xl py-2.5 text-sm font-bold disabled:opacity-60 "+cBtn}>
                 {saving?"جاري الحفظ...":"حفظ"}
               </button>
