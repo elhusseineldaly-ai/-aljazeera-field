@@ -43,7 +43,7 @@
 
     const SUPABASE_URL = "https://pdjjlzmldrvhhurtulma.supabase.co";
     const SUPABASE_KEY = "sb_publishable_6bwC9B-Q20VG09Bq6bUXow_6xq3qdGh";
-    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const _rawDb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     const STORAGE_BUCKET = "media";
 
     /* ===== نظام الجلسة وتسجيل الدخول ===== */
@@ -51,6 +51,219 @@
     let SESSION = (()=>{ try{ return JSON.parse(localStorage.getItem(SESSION_KEY)||"null"); }catch(e){ return null; } })();
     function setSession(s){ SESSION = s; try{ s ? localStorage.setItem(SESSION_KEY, JSON.stringify(s)) : localStorage.removeItem(SESSION_KEY); }catch(e){} }
     function currentUserName(){ return (SESSION && (SESSION.name || SESSION.username)) || "—"; }
+
+    /* ===================================================================
+       طبقة العمل بدون إنترنت (Offline Layer)
+       - كل عمليات القراءة تُخزَّن في كاش محلي وتُقرأ منه عند انقطاع الشبكة
+       - كل عمليات الكتابة تُحفظ في طابور محلي (Outbox) وتُرسل تلقائيًا عند رجوع الشبكة
+       ملاحظة: كل الاستدعاءات في التطبيق تستخدم db.from(...) فما احتجنا نغيّر أي مكان
+       =================================================================== */
+    const CACHE_PREFIX = "jz_cache:";
+    const OUTBOX_KEY   = "jz_outbox";
+    const FAILED_KEY   = "jz_outbox_failed";
+    const WRITE_OPS    = ["insert","update","upsert","delete"];
+    const MAX_CACHE_BYTES = 400000;
+
+    const SyncState = {
+      online: (typeof navigator!=="undefined" && navigator.onLine!==false),
+      pending: 0,
+      failed: 0,
+      syncing: false,
+      lastSync: null,
+      listeners: new Set(),
+      subscribe(fn){ this.listeners.add(fn); return ()=>this.listeners.delete(fn); },
+      emit(){ this.listeners.forEach(fn=>{ try{ fn(); }catch(e){} }); }
+    };
+
+    function lsGet(k, dflt){ try{ const s=localStorage.getItem(k); return s?JSON.parse(s):dflt; }catch(e){ return dflt; } }
+    function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); return true; }catch(e){ return false; } }
+
+    function readOutbox(){ const a=lsGet(OUTBOX_KEY,[]); return Array.isArray(a)?a:[]; }
+    function readFailed(){ const a=lsGet(FAILED_KEY,[]); return Array.isArray(a)?a:[]; }
+    function writeOutbox(arr){ lsSet(OUTBOX_KEY,arr); SyncState.pending=arr.length; SyncState.emit(); }
+    function writeFailed(arr){ lsSet(FAILED_KEY,arr); SyncState.failed=arr.length; SyncState.emit(); }
+
+    function setOnline(v){ if(SyncState.online!==v){ SyncState.online=v; SyncState.emit(); } }
+
+    function isNetErr(e){
+      if(typeof navigator!=="undefined" && navigator.onLine===false) return true;
+      const m = String((e && (e.message||e.details||e.hint)) || e || "").toLowerCase();
+      return m.includes("failed to fetch") || m.includes("networkerror") || m.includes("load failed")
+          || m.includes("network request failed") || m.includes("fetch failed") || m.includes("err_internet")
+          || m.includes("timeout") || m.includes("aborted") || m.includes("offline");
+    }
+
+    /* ---- كاش القراءة ---- */
+    function cacheKey(ctx){ return ctx.table + "|" + JSON.stringify(ctx.chain); }
+    function cacheGet(key){ return lsGet(CACHE_PREFIX+key, null); }
+    function cacheSet(key, data){
+      try{
+        const body = JSON.stringify({ t: Date.now(), d: data });
+        if(body.length > MAX_CACHE_BYTES) return;
+        localStorage.setItem(CACHE_PREFIX+key, body);
+      }catch(e){ pruneCache(); }
+    }
+    function pruneCache(){
+      try{
+        const keys = Object.keys(localStorage).filter(k=>k.indexOf(CACHE_PREFIX)===0);
+        keys.map(k=>({k, t:(lsGet(k,{t:0})||{t:0}).t||0}))
+            .sort((a,b)=>a.t-b.t).slice(0, Math.ceil(keys.length/2))
+            .forEach(x=>{ try{ localStorage.removeItem(x.k); }catch(e){} });
+      }catch(e){}
+    }
+    function clearSyncCache(){
+      try{ Object.keys(localStorage).filter(k=>k.indexOf(CACHE_PREFIX)===0).forEach(k=>localStorage.removeItem(k)); }catch(e){}
+    }
+
+    /* ---- طابور الكتابة ---- */
+    function queueOp(ctx){
+      const box = readOutbox();
+      box.push({
+        id: "op_"+Date.now()+"_"+Math.random().toString(36).slice(2,7),
+        table: ctx.table, op: ctx.op, payload: ctx.payload, opts: ctx.opts || null,
+        chain: (ctx.chain||[]).filter(c=>c[0]!=="select"),
+        ts: new Date().toISOString(), user: currentUserName()
+      });
+      writeOutbox(box);
+    }
+
+    /* الصفوف المحفوظة محليًا وما اتزامنت بعد — تُدمج مع الكاش حتى ما تختفي من الشاشة */
+    function pendingRowsFor(table){
+      const out = [];
+      readOutbox().forEach((o,oi)=>{
+        if(o.table!==table || o.op!=="insert") return;
+        const rows = Array.isArray(o.payload) ? o.payload : [o.payload];
+        rows.forEach((r,ri)=>{ if(r && typeof r==="object") out.push({ ...r, id: r.id!=null ? r.id : ("pending_"+oi+"_"+ri), _pending:true }); });
+      });
+      return out;
+    }
+
+    async function runQuery(raw, ctx){
+      /* ===== كتابة ===== */
+      if(ctx.op){
+        if(!SyncState.online){ queueOp(ctx); return { data:null, error:null, queued:true }; }
+        try{
+          const res = await raw;
+          if(res && res.error && isNetErr(res.error)){ setOnline(false); queueOp(ctx); return { data:null, error:null, queued:true }; }
+          if(res && !res.error) setOnline(true);
+          return res;
+        }catch(e){
+          if(isNetErr(e)){ setOnline(false); queueOp(ctx); return { data:null, error:null, queued:true }; }
+          return { data:null, error:{ message:String((e&&e.message)||e) } };
+        }
+      }
+      /* ===== قراءة ===== */
+      const key = cacheKey(ctx);
+      const fallback = ()=>{
+        const c = cacheGet(key);
+        if(!c) return null;
+        const base = Array.isArray(c.d) ? c.d.slice() : c.d;
+        const merged = Array.isArray(base) ? base.concat(pendingRowsFor(ctx.table)) : base;
+        return { data: merged, error: null, fromCache: true, cachedAt: c.t };
+      };
+      try{
+        const res = await raw;
+        if(res && res.error){
+          if(isNetErr(res.error)){ setOnline(false); const f=fallback(); if(f) return f; }
+          return res;
+        }
+        setOnline(true);
+        if(res) cacheSet(key, res.data);
+        return res;
+      }catch(e){
+        if(isNetErr(e)){ setOnline(false); const f=fallback(); if(f) return f; }
+        return { data:null, error:{ message:String((e&&e.message)||e) } };
+      }
+    }
+
+    /* غلاف شفاف حول باني استعلامات Supabase: يسجّل السلسلة ثم يتصرّف عند التنفيذ */
+    function wrapBuilder(raw, ctx){
+      let promise = null;
+      return new Proxy(raw, {
+        get(target, prop){
+          if((prop==="then"||prop==="catch"||prop==="finally") && typeof target.then==="function"){
+            if(!promise) promise = runQuery(target, ctx);
+            return promise[prop].bind(promise);
+          }
+          const v = target[prop];
+          if(typeof v === "function"){
+            return function(...args){
+              if(WRITE_OPS.indexOf(prop)>=0){ ctx.op = prop; ctx.payload = args[0]; ctx.opts = args[1] || null; }
+              else { try{ JSON.stringify(args); ctx.chain.push([prop, args]); }catch(e){} }
+              const out = v.apply(target, args);
+              return (out && typeof out==="object" && typeof out.then==="function") ? wrapBuilder(out, ctx) : out;
+            };
+          }
+          return v;
+        }
+      });
+    }
+
+    /* كائن db المستخدم في كل التطبيق */
+    const db = {
+      from(table){ return wrapBuilder(_rawDb.from(table), { table, chain:[], op:null, payload:null, opts:null }); },
+      rpc(...a){ return _rawDb.rpc(...a); },
+      get storage(){ return _rawDb.storage; },
+      get auth(){ return _rawDb.auth; },
+      raw: _rawDb
+    };
+
+    /* ---- إعادة إرسال الطابور ---- */
+    async function flushOutbox(){
+      if(SyncState.syncing) return 0;
+      let box = readOutbox();
+      if(!box.length) return 0;
+      if(typeof navigator!=="undefined" && navigator.onLine===false) return 0;
+
+      SyncState.syncing = true; SyncState.emit();
+      let sent = 0;
+      const failed = readFailed();
+      try{
+        while(box.length){
+          const item = box[0];
+          let res = null, threw = null;
+          try{
+            let q = _rawDb.from(item.table)[item.op](item.payload, item.opts || undefined);
+            (item.chain||[]).forEach(([m,a])=>{ if(q && typeof q[m]==="function") q = q[m].apply(q, a); });
+            res = await q;
+          }catch(e){ threw = e; }
+
+          if(threw){
+            if(isNetErr(threw)){ setOnline(false); break; }        // الشبكة رجعت تقطع → نوقف ونحفظ الباقي
+            failed.push({ ...item, error:String(threw.message||threw) }); box.shift();
+          }else if(res && res.error){
+            if(isNetErr(res.error)){ setOnline(false); break; }
+            failed.push({ ...item, error:String(res.error.message||"خطأ من قاعدة البيانات") }); box.shift();
+          }else{
+            box.shift(); sent++;
+          }
+          writeOutbox(box);
+        }
+      } finally {
+        writeOutbox(box);
+        writeFailed(failed);
+        if(sent){ SyncState.lastSync = new Date().toISOString(); clearSyncCache(); }
+        SyncState.syncing = false; SyncState.emit();
+      }
+      return sent;
+    }
+
+    async function retryFailed(){
+      const failed = readFailed();
+      if(!failed.length) return;
+      const box = readOutbox().concat(failed.map(f=>{ const c={...f}; delete c.error; return c; }));
+      writeFailed([]); writeOutbox(box);
+      return flushOutbox();
+    }
+    function dropFailed(){ writeFailed([]); }
+
+    /* ---- مراقبة الشبكة ---- */
+    SyncState.pending = readOutbox().length;
+    SyncState.failed  = readFailed().length;
+    if(typeof window !== "undefined"){
+      window.addEventListener("online",  ()=>{ setOnline(true);  flushOutbox(); });
+      window.addEventListener("offline", ()=>{ setOnline(false); });
+    }
 
     /* ===== ثوابت التصميم ===== */
     const cCard = "bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl soft-shadow";
@@ -102,6 +315,7 @@
       return t;
     }
     function TagRow({ table, r, max }){ const tags=cardTags(table,r).slice(0,max||4);
+      if(r&&r._pending) tags.unshift({ text:"⏳ بانتظار المزامنة", color:"#D97706" });
       return (<div className="flex flex-wrap gap-1.5">{tags.map((t,i)=>(<span key={i} className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{color:t.color,background:t.color+"1e",border:"1px solid "+t.color+"33"}}>{t.text}</span>))}</div>); }
 
     /* ===== كتالوج المنتجات (مستخرَج من ملف الحصة السوقية) ===== */
@@ -2099,8 +2313,1011 @@ const DEFAULT_CATALOG = [
       );
     }
 
+    /* ===== شريط حالة المزامنة (العمل بدون إنترنت) ===== */
+    const TABLE_LABELS = {
+      painters:"الدهانين", projects:"المواقع", contractors:"المطوّرون العقاريون", visits:"الزيارات",
+      trainings:"التدريبات", interactions:"التفاعلات", activity_log:"سجل النشاط",
+      product_catalog:"كتالوج المنتجات", weekly_plan:"الخطة الأسبوعية"
+    };
+    const OP_LABELS = { insert:"إضافة", update:"تعديل", upsert:"حفظ", delete:"حذف" };
+
+    function useSync(){
+      const [, force] = useState(0);
+      useEffect(()=> SyncState.subscribe(()=>force(x=>x+1)), []);
+      return SyncState;
+    }
+
+    function FailedModal({ open, onClose, onChanged }){
+      if(!open) return null;
+      const items = readFailed();
+      return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+          <div className={"w-full sm:max-w-lg max-h-[85vh] overflow-y-auto p-4 pop "+cCard} onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-extrabold text-sm text-red-600 dark:text-red-400">عمليات لم تُحفظ في السحابة</h3>
+              <button onClick={onClose} className={"p-1.5 rounded-lg "+cHover}><Icon n="close" s={16}/></button>
+            </div>
+            <p className={"text-xs mb-3 "+cMuted}>
+              هذه عمليات رفضتها قاعدة البيانات (وليست مشكلة إنترنت). راجع السبب، ثم أعد المحاولة أو احذفها.
+            </p>
+            <div className="space-y-2">
+              {items.length===0 ? <div className={"text-xs "+cMuted}>لا يوجد شيء هنا.</div> : items.map((f,i)=>(
+                <div key={f.id||i} className={"rounded-xl p-3 "+cTrack}>
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <Pill text={OP_LABELS[f.op]||f.op} color="#DC2626"/>
+                    <span className="text-xs font-bold">{TABLE_LABELS[f.table]||f.table}</span>
+                    <span className={"text-xs mr-auto "+cMuted}>{fmtDateTime(f.ts)}</span>
+                  </div>
+                  <div className="text-xs text-red-600 dark:text-red-400 break-words">{f.error}</div>
+                </div>
+              ))}
+            </div>
+            {items.length>0 && (
+              <div className="flex gap-2 mt-4">
+                <button onClick={async()=>{ await retryFailed(); onChanged&&onChanged(); onClose(); }}
+                  className={"flex-1 rounded-xl py-2.5 text-xs font-bold flex items-center justify-center gap-1.5 "+cBtn}>
+                  <Icon n="refresh" s={14}/> إعادة المحاولة للكل
+                </button>
+                <button onClick={()=>{ if(confirm("حذف هذه العمليات نهائيًا؟ البيانات فيها ستفقد.")){ dropFailed(); onChanged&&onChanged(); onClose(); } }}
+                  className="px-4 rounded-xl py-2.5 text-xs font-bold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+                  حذف
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function SyncBar(){
+      const s = useSync();
+      const [showFailed,setShowFailed] = useState(false);
+
+      const offline = !s.online;
+      const pending = s.pending;
+      const failed  = s.failed;
+      if(!offline && !pending && !failed && !s.syncing) return null;
+
+      const bar = (bg, border, text, children) => (
+        <div className={"px-4 py-2 text-xs font-bold flex items-center gap-2 flex-wrap border-b "+bg+" "+border+" "+text}>{children}</div>
+      );
+
+      return (
+        <>
+          {offline && bar("bg-amber-50 dark:bg-amber-950/40","border-amber-200 dark:border-amber-900/60","text-amber-800 dark:text-amber-300", <>
+            <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"/>
+            <span>لا يوجد اتصال — الحفظ يتم على جهازك</span>
+            {pending>0 && <span className="px-2 py-0.5 rounded-full bg-amber-500/20">{pending} عملية بالانتظار</span>}
+            <span className={"mr-auto font-medium "+cMuted}>سترسل تلقائيًا عند رجوع الشبكة</span>
+          </>)}
+
+          {!offline && s.syncing && bar("bg-indigo-50 dark:bg-indigo-950/40","border-indigo-200 dark:border-indigo-900/60","text-indigo-700 dark:text-indigo-300", <>
+            <Icon n="refresh" s={14}/>
+            <span>جاري مزامنة {pending} عملية...</span>
+          </>)}
+
+          {!offline && !s.syncing && pending>0 && bar("bg-indigo-50 dark:bg-indigo-950/40","border-indigo-200 dark:border-indigo-900/60","text-indigo-700 dark:text-indigo-300", <>
+            <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0"/>
+            <span>{pending} عملية محفوظة محليًا لم تُرسل بعد</span>
+            <button onClick={()=>flushOutbox()} className={"mr-auto px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 "+cBtn}>
+              <Icon n="refresh" s={13}/> مزامنة الآن
+            </button>
+          </>)}
+
+          {failed>0 && bar("bg-red-50 dark:bg-red-950/40","border-red-200 dark:border-red-900/60","text-red-700 dark:text-red-300", <>
+            <span className="w-2 h-2 rounded-full bg-red-500 shrink-0"/>
+            <span>{failed} عملية فشل حفظها في السحابة</span>
+            <button onClick={()=>setShowFailed(true)} className="mr-auto px-3 py-1 rounded-lg text-xs font-bold border border-red-300 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/40 transition">
+              عرض التفاصيل
+            </button>
+          </>)}
+
+          <FailedModal open={showFailed} onClose={()=>setShowFailed(false)} onChanged={()=>{}}/>
+        </>
+      );
+    }
+
+    /* ===================================================================
+       متابعة عملاء المعرض — Pipeline / CRM
+       مبني على منهجية: مرحلة + احتمال إغلاق مرجّح + درجة أولوية + استهداف
+       =================================================================== */
+    const SR_TABLE = "showroom_customers";
+
+    /* المراحل مع احتمال الإغلاق (Weighted Pipeline) */
+    const SR_STAGES = [
+      { k:"زائر جديد",      color:"#64748B", p:0.10, icon:"user",   hint:"دخل المعرض وسأل — لسه ما تحدد احتياجه" },
+      { k:"تحديد الاحتياج", color:"#2563EB", p:0.25, icon:"target", hint:"عرفنا المساحة والمرحلة والمنتجات" },
+      { k:"عرض سعر",        color:"#7C3AED", p:0.50, icon:"doc",    hint:"استلم عرض سعر مكتوب" },
+      { k:"تفاوض",          color:"#D97706", p:0.70, icon:"bolt",   hint:"يقارن الأسعار أو يطلب تعديل" },
+      { k:"تم البيع",       color:"#16A34A", p:1.00, icon:"trophy", hint:"أتم الشراء ✅" },
+      { k:"خسارة",          color:"#DC2626", p:0.00, icon:"close",  hint:"ما اكتمل البيع — سجّل السبب" },
+    ];
+    const SR_STAGE_KEYS  = SR_STAGES.map(s=>s.k);
+    const SR_STAGE_MAP   = Object.fromEntries(SR_STAGES.map(s=>[s.k,s]));
+    const SR_OPEN_STAGES = ["زائر جديد","تحديد الاحتياج","عرض سعر","تفاوض"];
+
+    const SR_TYPES  = ["مالك فيلا","مالك عمارة","مقاول","مؤسسة","دهان","مطوّر عقاري","محل/تجاري","أخرى"];
+    const SR_SOURCES= ["زيارة المعرض","واتساب","إحالة دهان","إحالة مقاول","إحالة مطوّر","إعلان/لوحة","عميل سابق"];
+    const SR_BUILD  = ["عظم","لياسة","جاهز للدهان","تشطيب نهائي","تجديد/صيانة"];
+    const SR_LOSS   = ["السعر أعلى","اختار منافس","تأجيل المشروع","قرار الدهان","لم يرد/انقطع","لون أو منتج غير متوفر","أخرى"];
+    const SR_COMPETITORS = ["جوتن","سافيتو","سيكا","اوسكار","هيمبل","سيجما","777","يو اس جي","ساف","أخرى","لا يوجد"];
+
+    /* المرحلة الإنشائية = أقوى مؤشر على توقيت الشراء */
+    const SR_BUILD_WEIGHT = { "جاهز للدهان":30, "تشطيب نهائي":25, "لياسة":20, "تجديد/صيانة":15, "عظم":5 };
+    const SR_TYPE_WEIGHT  = { "مقاول":10, "مؤسسة":10, "مطوّر عقاري":10, "مالك عمارة":8, "محل/تجاري":7, "مالك فيلا":5, "دهان":6, "أخرى":3 };
+
+    const SR_TARGET_KEY = "jz_showroom_target";
+    const SR_COLD_DAYS  = 7;   /* بعدها يُعدّ العميل بارد */
+
+    function srDaysSince(d){
+      if(!d) return 999;
+      const t=new Date(String(d).slice(0,10)+"T00:00:00");
+      if(isNaN(t.getTime())) return 999;
+      return Math.floor((new Date(new Date().toISOString().slice(0,10)+"T00:00:00")-t)/86400000);
+    }
+    function srMoney(v){ return (Number(v)||0).toLocaleString("en-US"); }
+    /* تقدير سريع: لتر يغطي ~10م² للوجه، وجهين ⇒ المساحة÷5 لتر × ~45 ريال للتر */
+    function srEstimate(area){ const a=Number(area)||0; return a?Math.round(a/5*45):0; }
+
+    /* درجة الأولوية 0-100 مع تفسير — التفسير هو اللي يخلي المندوب يتحرك */
+    function srScore(c){
+      const R=[]; let s=0;
+      const bw=SR_BUILD_WEIGHT[c.build_stage]||0;
+      if(bw){ s+=bw; R.push({ good:bw>=20, t:"مرحلة البناء: "+c.build_stage, v:"+"+bw }); }
+      const area=Number(c.area_m2)||0;
+      const aw = area>=1000?20 : area>=500?14 : area>=200?8 : area>0?3 : 0;
+      if(aw){ s+=aw; R.push({ good:aw>=14, t:"المساحة: "+srMoney(area)+" م²", v:"+"+aw }); }
+      const val=Number(c.quote_value)||0;
+      const vw = val>=50000?20 : val>=20000?14 : val>=5000?8 : val>0?4 : 0;
+      if(vw){ s+=vw; R.push({ good:vw>=14, t:"قيمة العرض: "+srMoney(val)+" ريال", v:"+"+vw }); }
+      const tw=SR_TYPE_WEIGHT[c.customer_type]||0;
+      if(tw){ s+=tw; R.push({ good:tw>=8, t:"نوع العميل: "+c.customer_type, v:"+"+tw }); }
+      if(c.linked_painter||c.linked_contractor){ s+=15; R.push({ good:true, t:"مرتبط بشبكة الـ٥ نجوم", v:"+15" }); }
+      const gap=srDaysSince(c.last_contact);
+      if(gap<=3){ s+=5; R.push({ good:true, t:"تواصل حديث ("+gap+" يوم)", v:"+5" }); }
+      else if(gap>SR_COLD_DAYS && gap<900){ s-=10; R.push({ good:false, t:"بارد — "+gap+" يوم بلا تواصل", v:"−10" }); }
+      else if(gap>=900){ s-=8; R.push({ good:false, t:"ما سُجّل أي تواصل", v:"−8" }); }
+      if(c.competitor && c.competitor!=="لا يوجد" && c.competitor!=="أخرى"){ s-=5; R.push({ good:false, t:"يقارن مع "+c.competitor, v:"−5" }); }
+      if(c.next_followup && c.next_followup < TODAY() && c.followup_status!=="تمت" && c.followup_status!=="ملغاة"){
+        s-=8; R.push({ good:false, t:"متابعة متأخرة عن "+c.next_followup, v:"−8" });
+      }
+      s=Math.max(0,Math.min(100,s));
+      const tier = s>=70?"ساخن" : s>=45?"واعد" : "بارد";
+      return { score:s, tier, reasons:R };
+    }
+    const SR_TIER_COLORS = { "ساخن":"#DC2626", "واعد":"#D97706", "بارد":"#64748B" };
+
+    /* رسائل واتساب جاهزة لكل مرحلة — نص بيعي لا يحتاج تعديل */
+    function srScript(c){
+      const first=(c.name||"").trim().split(/\s+/)[0]||"عميلنا الكريم";
+      const me=currentUserName()!=="—"?currentUserName():"فريق الجزيرة";
+      const place=c.showroom?(" — "+c.showroom):"";
+      const prods=findingsText(c.products);
+      const q=Number(c.quote_value)||0;
+      const pl=prods?("\nالأنظمة المقترحة: "+prods):"";
+      switch(c.stage){
+        case "زائر جديد":
+          return `السلام عليكم ${first} 🌿\nمعك ${me} من معرض دهانات الجزيرة${place}.\nشرف لنا زيارتك اليوم. سجّلت ملاحظاتي عن مشروعك${pl}\nمتى يناسبك أجهّز لك الكميات والسعر بالتفصيل؟`;
+        case "تحديد الاحتياج":
+          return `السلام عليكم ${first}\nراجعت مشروعك (${c.project_type||"المشروع"}${c.area_m2?" — "+srMoney(c.area_m2)+" م²":""}) وحسبت الكميات المطلوبة.${pl}\nأرسل لك عرض السعر الرسمي اليوم؟ العرض يشمل النظام كامل من المعجون للوجه الأخير حتى تضمن النتيجة ولا تتفاجأ بتكاليف إضافية.`;
+        case "عرض سعر":
+          return `السلام عليكم ${first}\nمتابعة لعرض السعر المرسل${q?(" بقيمة "+srMoney(q)+" ريال"):""}.\nحابب أطمّن: وصلك العرض واضح؟ ولو فيه أي بند تحب نراجعه أنا جاهز.\nملاحظة مهمة: الكميات محسوبة على أساس مساحتك الفعلية، فأي تعديل بالمساحة يغيّر السعر — أفضل نثبّته قبل بداية الدهان.`;
+        case "تفاوض":
+          return `السلام عليكم ${first}\nفهمت أنك تقارن بين أكثر من خيار، وهذا حقك 👍\nخلني أوضح الفرق بشكل عملي: تكلفة اللتر مو هي التكلفة الحقيقية — التكلفة الحقيقية هي كم متر يغطي اللتر وكم سنة يصبر قبل يحتاج إعادة دهان. أنظمتنا تغطي مساحة أكبر لكل لتر، فالتكلفة على المتر تطلع أقل.\nأقدر أرتّب لك دهان معتمد بتقييم ٥ نجوم ينفّذ المشروع بإشرافنا. تحب أرسل لك الاسم؟`;
+        case "تم البيع":
+          return `مبروك عليك ${first} 🎉\nشكرًا لثقتك في دهانات الجزيرة.${pl}\nنصيحة للتنفيذ: التزم بزمن الجفاف بين الأوجه، وتجنّب الدهان في الرطوبة العالية — هذا اللي يضمن ثبات اللون.\nطلب صغير: لو النتيجة عجبتك، أسعدني بترشيح شخص واحد تعرف أنه في مرحلة الدهان الآن — وأنا أتكفّل بخدمته مثلك تمامًا.`;
+        case "خسارة":
+          return `السلام عليكم ${first}\nأتفهّم قرارك تمامًا وما فيه أي مشكلة 🌿\nخليت ملفك مفتوح عندي، ولو احتجت أي استشارة عن الألوان أو الكميات — حتى لو ما شريت منّا — راسلني وأنا أساعدك.\nودّي أعرف بصراحة: أكبر سبب خلاك تختار غيرنا كان إيش؟ ملاحظتك تفيدني فعلًا.`;
+        default:
+          return `السلام عليكم ${first}\nمعك ${me} من دهانات الجزيرة${place}. أتابع معك بخصوص مشروعك.`;
+      }
+    }
+
+    /* اقتراح الخطوة التالية — يمنع "شنو أسوي الآن؟" */
+    function srNextAction(c){
+      if(c.stage==="تم البيع")  return { t:"اطلب إحالة + صورة للمشروع بعد التنفيذ", c:"#16A34A" };
+      if(c.stage==="خسارة")     return { t:"اسأل عن سبب الخسارة واحفظه، وأعد التواصل بعد ٣٠ يوم", c:"#DC2626" };
+      if(!c.phone)              return { t:"⚠️ ما فيه رقم جوال — العميل مفقود بدونه", c:"#DC2626" };
+      if(c.stage==="زائر جديد") return { t:"اتصل خلال ٢٤ ساعة وحدّد المساحة ومرحلة البناء", c:"#2563EB" };
+      if(c.stage==="تحديد الاحتياج") return { t:"أرسل عرض السعر — لا تتأخر أكثر من ٤٨ ساعة", c:"#7C3AED" };
+      if(c.stage==="عرض سعر"){
+        const g=srDaysSince(c.last_contact);
+        return g>3 ? { t:"مرّ "+g+" يوم على آخر تواصل — تابع العرض الآن", c:"#DC2626" }
+                   : { t:"تأكد أن العرض وصل وواضح، وثبّت موعد القرار", c:"#7C3AED" };
+      }
+      if(c.stage==="تفاوض")     return { t:"اربطه بدهان ٥ نجوم وأغلق البيع — لا تنزل السعر أولًا", c:"#D97706" };
+      return { t:"حدّد الخطوة التالية", c:"#64748B" };
+    }
+
+    /* ===== شبكة الـ٥ نجوم: الدهانون والمؤسسات والمطوّرون بتقييم ٥ فقط ===== */
+    function SrElite({ elite, onRefer }){
+      const [tab,setTab]=useState("painters");
+      const groups={
+        painters:{ label:"دهانون ٥★", rows:elite.painters, color:"#4F46E5" },
+        orgs:{ label:"مؤسسات ٥★", rows:elite.orgs, color:"#0891B2" },
+        contractors:{ label:"مطوّرون ٥★", rows:elite.contractors, color:"#7C3AED" },
+      };
+      const g=groups[tab];
+      return (
+        <div className={"rounded-2xl p-4 "+cCard}>
+          <div className="flex items-center gap-2 mb-1">
+            <Icon n="star" s={16} c="text-amber-500"/>
+            <h3 className="font-extrabold text-sm">شبكة الخمس نجوم</h3>
+            <span className={"text-xs mr-auto "+cMuted}>{elite.painters.length+elite.orgs.length+elite.contractors.length} جهة</span>
+          </div>
+          <p className={"text-xs mb-3 "+cMuted}>
+            اربط العميل بجهة من هنا. الربط يرفع أولوية العميل ويُسجّل تلقائيًا كإحالة في ملف الجهة.
+          </p>
+          <div className="flex gap-1.5 mb-3 overflow-x-auto no-scrollbar">
+            {Object.keys(groups).map(k=>(
+              <button key={k} onClick={()=>setTab(k)}
+                className={"shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold transition "+(tab===k?cBtn:cMuted+" "+cTrack+" "+cHover)}>
+                {groups[k].label} ({groups[k].rows.length})
+              </button>
+            ))}
+          </div>
+          {g.rows.length===0 ? (
+            <div className={"text-xs rounded-xl p-3 "+cTrack+" "+cMuted}>
+              ما فيه جهة بتقييم ٥ نجوم في هذا القسم. ارفع تقييم أفضل تعاملاتك إلى ٥ من صفحتهم وسيظهرون هنا.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {g.rows.map(r=>(
+                <div key={r.id} className={"rounded-xl p-3 flex items-center gap-2 "+cTrack}>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-xs truncate">{r.name}</div>
+                    <div className={"text-[11px] truncate "+cMuted}>{r.city||"—"}{r.showroom?" · "+r.showroom:""}</div>
+                    <Stars n={5}/>
+                  </div>
+                  <WhatsAppButton phone={r.phone} iconOnly size={14}/>
+                  <button onClick={()=>onRefer(r,tab)} title="إحالة عميل إلى هذه الجهة"
+                    className={"px-2.5 py-1.5 rounded-lg text-[11px] font-bold shrink-0 "+cBtn}>إحالة</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ===== لوحة الاستهداف (التصفية المتقدمة) ===== */
+    function SrTargeting({ f, setF, rows, open, setOpen }){
+      const set=(k,v)=>setF(x=>({...x,[k]:v}));
+      const uniq=k=>[...new Set(rows.map(r=>r[k]).filter(Boolean))];
+      const Toggle=({k,label,color})=>(
+        <button onClick={()=>set(k,!f[k])}
+          className={"px-3 py-1.5 rounded-xl text-xs font-bold border transition whitespace-nowrap "+
+            (f[k]?"text-white border-transparent":cMuted+" "+cTrack+" border-transparent "+cHover)}
+          style={f[k]?{background:color}:{}}>{label}</button>
+      );
+      const active=["onlyDue","onlyHot","onlyQuoted","onlyCold","onlyReady","onlyLinked","onlyUnlinked"].filter(k=>f[k]).length
+        + ["city","showroom","type","stage","build","competitor","source"].filter(k=>f[k]).length
+        + (Number(f.minValue)>0?1:0);
+      return (
+        <div className={"rounded-2xl p-3 "+cCard}>
+          <div className="flex items-center gap-2">
+            <Icon n="filter" s={15} c={cAccent}/>
+            <span className="font-extrabold text-sm">لوحة الاستهداف</span>
+            {active>0 && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-600 text-white">{active} مُطبَّق</span>}
+            <div className="mr-auto flex items-center gap-1.5">
+              {active>0 && (
+                <button onClick={()=>setF(srEmptyFilters())} className={"px-2.5 py-1.5 rounded-lg text-xs font-bold "+cMuted+" "+cHover}>مسح</button>
+              )}
+              <button onClick={()=>setOpen(!open)} className={"px-2.5 py-1.5 rounded-lg text-xs font-bold "+cAccent+" "+cHover}>
+                {open?"إخفاء":"تحكّم"}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center gap-2 rounded-xl px-3 py-2 border border-slate-200 dark:border-slate-700">
+            <Icon n="search" s={15} c={cMuted}/>
+            <input value={f.q} onChange={e=>set("q",e.target.value)} placeholder="ابحث بالاسم أو الجوال أو الملاحظات..."
+              className="bg-transparent outline-none text-xs w-full"/>
+            {f.q && <button onClick={()=>set("q","")} className={cMuted}><Icon n="close" s={14}/></button>}
+          </div>
+
+          <div className="mt-2.5 flex gap-1.5 flex-wrap">
+            <Toggle k="onlyDue"      label="⏰ متابعة مستحقة" color="#DC2626"/>
+            <Toggle k="onlyHot"      label="🔥 ساخن فقط"      color="#EA580C"/>
+            <Toggle k="onlyQuoted"   label="📄 عرض بلا إغلاق"  color="#7C3AED"/>
+            <Toggle k="onlyReady"    label="🎯 جاهز للدهان"    color="#16A34A"/>
+            <Toggle k="onlyCold"     label={"❄️ بارد +"+f.coldDays+"ي"} color="#0891B2"/>
+            <Toggle k="onlyLinked"   label="★ مرتبط بالشبكة"   color="#4F46E5"/>
+            <Toggle k="onlyUnlinked" label="بلا ربط"           color="#64748B"/>
+          </div>
+
+          {open && (
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2.5 fade">
+              <Sel label="المعرض"     v={f.showroom}   on={v=>set("showroom",v)}   opts={["", ...SHOWROOMS_OPTS]}/>
+              <Sel label="المدينة"    v={f.city}       on={v=>set("city",v)}       opts={["", ...CITIES]}/>
+              <Sel label="نوع العميل" v={f.type}       on={v=>set("type",v)}       opts={["", ...SR_TYPES]}/>
+              <Sel label="المرحلة"    v={f.stage}      on={v=>set("stage",v)}      opts={["", ...SR_STAGE_KEYS]}/>
+              <Sel label="مرحلة البناء" v={f.build}    on={v=>set("build",v)}      opts={["", ...SR_BUILD]}/>
+              <Sel label="المنافس"    v={f.competitor} on={v=>set("competitor",v)} opts={["", ...SR_COMPETITORS]}/>
+              <Sel label="المصدر"     v={f.source}     on={v=>set("source",v)}     opts={["", ...SR_SOURCES]}/>
+              <Inp label="أقل قيمة عرض (ريال)" type="number" v={f.minValue} on={v=>set("minValue",v)}/>
+              <Inp label="حد البرودة (يوم)"    type="number" v={f.coldDays} on={v=>set("coldDays",v)}/>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function srEmptyFilters(){
+      return { q:"", city:"", showroom:"", type:"", stage:"", build:"", competitor:"", source:"",
+        onlyDue:false, onlyHot:false, onlyQuoted:false, onlyCold:false, onlyReady:false,
+        onlyLinked:false, onlyUnlinked:false, minValue:0, coldDays:SR_COLD_DAYS };
+    }
+
+    /* ===== كرت العميل ===== */
+    function SrCard({ c, onOpen, onMove }){
+      const st=SR_STAGE_MAP[c.stage]||SR_STAGES[0];
+      const sc=srScore(c);
+      const due=c.next_followup && c.next_followup<=TODAY() && c.followup_status!=="تمت" && c.followup_status!=="ملغاة";
+      const late=c.next_followup && c.next_followup<TODAY() && c.followup_status!=="تمت" && c.followup_status!=="ملغاة";
+      const val=Number(c.quote_value)||Number(c.deal_value)||0;
+      const idx=SR_STAGE_KEYS.indexOf(c.stage);
+      return (
+        <div className={"rounded-xl p-3 border-r-4 "+cCard+" "+cHover} style={{borderRightColor:st.color}}>
+          <button onClick={()=>onOpen(c)} className="w-full text-right">
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="font-extrabold text-xs truncate">{c.name||"بلا اسم"}</div>
+                <div className={"text-[11px] truncate mt-0.5 "+cMuted}>
+                  {c.customer_type||"—"}{c.city?" · "+c.city:""}{c.area_m2?" · "+srMoney(c.area_m2)+"م²":""}
+                </div>
+              </div>
+              <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0"
+                style={{color:SR_TIER_COLORS[sc.tier],background:SR_TIER_COLORS[sc.tier]+"1f"}}>{sc.score}</span>
+            </div>
+            <div className="flex flex-wrap gap-1 mt-2">
+              {c._pending && <Pill text="⏳ بانتظار المزامنة" color="#D97706"/>}
+              {val>0 && <Pill text={srMoney(val)+" ريال"} color="#16A34A"/>}
+              {c.build_stage && <Pill text={c.build_stage} color={SR_BUILD_WEIGHT[c.build_stage]>=20?"#16A34A":"#64748B"}/>}
+              {late ? <Pill text="متابعة متأخرة" color="#DC2626"/> : due ? <Pill text="متابعة اليوم" color="#D97706"/> : null}
+              {(c.linked_painter||c.linked_contractor) && <Pill text={"★ "+(c.linked_painter||c.linked_contractor)} color="#4F46E5"/>}
+              {c.competitor && c.competitor!=="لا يوجد" && <Pill text={"ضد "+c.competitor} color="#DC2626"/>}
+            </div>
+          </button>
+          <div className={"flex items-center gap-1 mt-2.5 pt-2 border-t "+cBorder}>
+            <WhatsAppButton phone={c.phone} iconOnly size={14}/>
+            {idx>0 && idx<4 && (
+              <button onClick={()=>onMove(c,SR_STAGE_KEYS[idx-1])} title="إرجاع مرحلة"
+                className={"p-1.5 rounded-lg "+cMuted+" "+cHover}><Icon n="chevron" s={13} c="rotate-180"/></button>
+            )}
+            {idx<4 && (
+              <button onClick={()=>onMove(c,SR_STAGE_KEYS[idx+1])}
+                className="mr-auto px-2.5 py-1 rounded-lg text-[11px] font-bold text-white shrink-0"
+                style={{background:SR_STAGE_MAP[SR_STAGE_KEYS[idx+1]].color}}>
+                {SR_STAGE_KEYS[idx+1]} ←
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ===== تفاصيل العميل + الإجراءات السريعة ===== */
+    function SrDetail({ c, onClose, onEdit, onDelete, onPatch, elite }){
+      /* كل الـ hooks قبل أي خروج مبكر — وإلا ينهار React عند إغلاق النافذة وفتحها */
+      const [msg,setMsg]=useState("");
+      const [copied,setCopied]=useState(false);
+      useEffect(()=>{ if(c){ setMsg(srScript(c)); setCopied(false); } },[c&&c.id, c&&c.stage]);
+      if(!c) return null;
+      const sc=srScore(c);
+      const na=srNextAction(c);
+      const st=SR_STAGE_MAP[c.stage]||SR_STAGES[0];
+      const link=waLink(c.phone,msg);
+      const prods=findingsText(c.products);
+      const gap=srDaysSince(c.last_contact);
+
+      return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+          <div className={"w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto p-4 pop "+cCard} onClick={e=>e.stopPropagation()}>
+            <div className="flex items-start gap-2 mb-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-extrabold text-base truncate">{c.name||"بلا اسم"}</h3>
+                  <Pill text={c.stage} color={st.color}/>
+                  <span className="text-[11px] font-extrabold px-2 py-0.5 rounded-full"
+                    style={{color:SR_TIER_COLORS[sc.tier],background:SR_TIER_COLORS[sc.tier]+"1f"}}>{sc.tier} · {sc.score}/100</span>
+                </div>
+                <div className={"text-xs mt-1 "+cMuted}>
+                  {c.customer_type||"—"} · {c.city||"—"} · {c.showroom||"بدون معرض"} · {c.phone||"لا يوجد رقم"}
+                </div>
+              </div>
+              <button onClick={onClose} className={"p-1.5 rounded-lg shrink-0 "+cHover}><Icon n="close" s={16}/></button>
+            </div>
+
+            <div className="rounded-xl p-3 mb-3 text-white" style={{background:na.c}}>
+              <div className="text-[11px] font-bold opacity-80">الخطوة التالية</div>
+              <div className="text-sm font-extrabold mt-0.5">{na.t}</div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+              {[["قيمة العرض",srMoney(c.quote_value)+" ر.س"],["قيمة الصفقة",srMoney(c.deal_value)+" ر.س"],
+                ["المساحة",(c.area_m2?srMoney(c.area_m2)+" م²":"—")],["آخر تواصل",(gap<900?gap+" يوم":"لا يوجد")]].map(([l,v],i)=>(
+                <div key={i} className={"rounded-xl p-2.5 "+cTrack}>
+                  <div className={"text-[10px] "+cMuted}>{l}</div>
+                  <div className="text-sm font-extrabold mt-0.5">{v}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* الإجراءات السريعة */}
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              <button onClick={()=>onPatch(c,{ last_contact:TODAY(), next_followup:srAddDays(3), followup_status:"مجدولة" })}
+                className={"px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 "+cBtn}>
+                <Icon n="check" s={13}/> تواصلت اليوم · متابعة بعد ٣ أيام
+              </button>
+              <button onClick={()=>onPatch(c,{ next_followup:srAddDays(7), followup_status:"مجدولة" })}
+                className={"px-3 py-2 rounded-xl text-xs font-bold "+cAccent+" "+cTrack+" "+cHover}>تأجيل أسبوع</button>
+              <button onClick={()=>onEdit(c)} className={"px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 "+cAccent+" "+cTrack+" "+cHover}>
+                <Icon n="edit" s={13}/> تعديل
+              </button>
+              <button onClick={()=>onDelete(c)} className="px-3 py-2 rounded-xl text-xs font-bold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+                <Icon n="trash" s={13}/>
+              </button>
+            </div>
+
+            {/* نقل المرحلة */}
+            <div className={"rounded-xl p-3 mb-3 "+cTrack}>
+              <div className="text-xs font-bold mb-2">نقل المرحلة</div>
+              <div className="flex gap-1.5 flex-wrap">
+                {SR_STAGES.map(s=>(
+                  <button key={s.k} onClick={()=>onPatch(c,{ stage:s.k })} title={s.hint}
+                    className={"px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition "+(c.stage===s.k?"text-white border-transparent":cMuted+" border-slate-200 dark:border-slate-700 "+cHover)}
+                    style={c.stage===s.k?{background:s.color}:{}}>{s.k}</button>
+                ))}
+              </div>
+              <div className={"text-[11px] mt-2 "+cMuted}>احتمال الإغلاق في هذه المرحلة: <b>{Math.round(st.p*100)}%</b> — {st.hint}</div>
+            </div>
+
+            {/* تفسير الدرجة */}
+            <div className={"rounded-xl p-3 mb-3 "+cTrack}>
+              <div className="text-xs font-bold mb-2">ليش درجته {sc.score}؟</div>
+              <div className="space-y-1">
+                {sc.reasons.length===0 ? <div className={"text-xs "+cMuted}>ما فيه بيانات كافية — أكمل مرحلة البناء والمساحة.</div> :
+                  sc.reasons.map((r,i)=>(
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:r.good?"#16A34A":"#DC2626"}}/>
+                      <span className="min-w-0 flex-1 truncate">{r.t}</span>
+                      <span className="font-extrabold shrink-0" style={{color:r.good?"#16A34A":"#DC2626"}}>{r.v}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            {prods && (
+              <div className={"rounded-xl p-3 mb-3 "+cTrack}>
+                <div className="text-xs font-bold mb-1">المنتجات المطلوبة</div>
+                <div className="text-xs">{prods}</div>
+              </div>
+            )}
+            {c.notes && (
+              <div className={"rounded-xl p-3 mb-3 "+cTrack}>
+                <div className="text-xs font-bold mb-1">ملاحظات</div>
+                <div className="text-xs whitespace-pre-wrap">{c.notes}</div>
+              </div>
+            )}
+
+            {/* رسالة واتساب جاهزة */}
+            <div className={"rounded-xl p-3 "+cTrack}>
+              <div className="flex items-center gap-2 mb-2">
+                <Icon n="link" s={14} c="text-emerald-600"/>
+                <span className="text-xs font-bold">رسالة جاهزة لمرحلة «{c.stage}»</span>
+                <button onClick={()=>setMsg(srScript(c))} className={"mr-auto text-[11px] font-bold "+cAccent}>إرجاع النص الأصلي</button>
+              </div>
+              <textarea value={msg} onChange={e=>setMsg(e.target.value)} rows={7}
+                className={"w-full rounded-lg px-3 py-2 text-xs outline-none leading-relaxed "+cInput}/>
+              <div className="flex gap-2 mt-2">
+                {link ? (
+                  <a href={link} target="_blank" rel="noreferrer"
+                    onClick={()=>onPatch(c,{ last_contact:TODAY(), contact_method:"واتساب" })}
+                    className="flex-1 rounded-xl py-2.5 text-xs font-bold text-white text-center bg-emerald-600 hover:bg-emerald-700 transition">
+                    إرسال على واتساب
+                  </a>
+                ) : (
+                  <div className={"flex-1 rounded-xl py-2.5 text-xs font-bold text-center "+cMuted}>أضف رقم جوال للإرسال</div>
+                )}
+                <button onClick={()=>{ try{ navigator.clipboard.writeText(msg); setCopied(true); setTimeout(()=>setCopied(false),1800); }catch(e){} }}
+                  className={"px-4 rounded-xl py-2.5 text-xs font-bold "+cAccent+" "+cHover+" border border-slate-200 dark:border-slate-700"}>
+                  {copied?"✓ تم النسخ":"نسخ"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function srAddDays(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+
+    /* ===== نموذج الإضافة/التعديل ===== */
+    function SrEditor({ editor, setEditor, onSave, elite, saving }){
+      if(!editor) return null;
+      const d=editor.data;
+      const set=(k,v)=>setEditor(e=>({...e,data:{...e.data,[k]:v}}));
+      const painterOpts=[...elite.painters,...elite.orgs].map(x=>x.name).filter(Boolean);
+      const contractorOpts=elite.contractors.map(x=>x.name).filter(Boolean);
+      const est=srEstimate(d.area_m2);
+      return (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center sm:p-4" onClick={()=>setEditor(null)}>
+          <div className={"w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto p-4 pop "+cCard} onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-extrabold text-sm">{editor.mode==="add"?"عميل معرض جديد":"تعديل بيانات العميل"}</h3>
+              <button onClick={()=>setEditor(null)} className={"p-1.5 rounded-lg "+cHover}><Icon n="close" s={16}/></button>
+            </div>
+
+            <div className={"text-[11px] font-bold mb-2 "+cAccent}>بيانات العميل</div>
+            <div className="grid grid-cols-2 gap-2.5 mb-4">
+              <Inp label="الاسم" v={d.name} on={v=>set("name",v)}/>
+              <Inp label="رقم الجوال" v={d.phone} on={v=>set("phone",v)}/>
+              <Sel label="نوع العميل" v={d.customer_type} on={v=>set("customer_type",v)} opts={SR_TYPES}/>
+              <Sel label="المصدر" v={d.source} on={v=>set("source",v)} opts={SR_SOURCES}/>
+              <Sel label="المدينة" v={d.city} on={v=>set("city",v)} opts={CITIES}/>
+              <Sel label="المعرض" v={d.showroom} on={v=>set("showroom",v)} opts={SHOWROOMS_OPTS}/>
+            </div>
+
+            <div className={"text-[11px] font-bold mb-2 "+cAccent}>المشروع</div>
+            <div className="grid grid-cols-2 gap-2.5 mb-2">
+              <Sel label="نوع المشروع" v={d.project_type} on={v=>set("project_type",v)} opts={PROJECT_TYPES}/>
+              <Sel label="مرحلة البناء" v={d.build_stage} on={v=>set("build_stage",v)} opts={SR_BUILD}/>
+              <Inp label="مساحة الدهان التقريبية (م²)" type="number" v={d.area_m2} on={v=>set("area_m2",v)}/>
+              <Sel label="المنافس المقارَن" v={d.competitor} on={v=>set("competitor",v)} opts={SR_COMPETITORS}/>
+            </div>
+            <div className="mb-4">
+              <FindingsField label="المنتجات المطلوبة / المعروضة" v={d.products} on={v=>set("products",v)} compact/>
+            </div>
+
+            <div className={"text-[11px] font-bold mb-2 "+cAccent}>البيع</div>
+            <div className="grid grid-cols-2 gap-2.5 mb-2">
+              <Sel label="المرحلة" v={d.stage} on={v=>set("stage",v)} opts={SR_STAGE_KEYS}/>
+              <Inp label="قيمة عرض السعر (ريال)" type="number" v={d.quote_value} on={v=>set("quote_value",v)}/>
+              {d.stage==="تم البيع" && <Inp label="قيمة الصفقة المحققة (ريال)" type="number" v={d.deal_value} on={v=>set("deal_value",v)}/>}
+              {d.stage==="خسارة" && <Sel label="سبب الخسارة" v={d.loss_reason} on={v=>set("loss_reason",v)} opts={SR_LOSS}/>}
+            </div>
+            {est>0 && !Number(d.quote_value) && (
+              <button onClick={()=>set("quote_value",est)}
+                className={"w-full rounded-xl py-2 text-[11px] font-bold mb-4 "+cAccent+" "+cTrack+" "+cHover}>
+                تقدير سريع: ~{srMoney(est)} ريال ({srMoney(d.area_m2)}م² ÷ ٥ = لترات × ٤٥ ر.س) — اضغط للتعبئة ثم عدّله
+              </button>
+            )}
+
+            <div className={"text-[11px] font-bold mb-2 "+cAccent}>الربط بشبكة الـ٥ نجوم</div>
+            <div className="grid grid-cols-2 gap-2.5 mb-4">
+              <RefField label="دهان/مؤسسة ٥★" v={d.linked_painter} on={v=>set("linked_painter",v)} options={painterOpts}/>
+              <RefField label="مطوّر عقاري ٥★" v={d.linked_contractor} on={v=>set("linked_contractor",v)} options={contractorOpts}/>
+            </div>
+
+            <div className={"text-[11px] font-bold mb-2 "+cAccent}>المتابعة</div>
+            <div className="grid grid-cols-2 gap-2.5 mb-4">
+              <Inp label="تاريخ الزيارة" type="date" v={d.visit_date} on={v=>set("visit_date",v)}/>
+              <Inp label="آخر تواصل" type="date" v={d.last_contact} on={v=>set("last_contact",v)}/>
+              <Inp label="المتابعة القادمة" type="date" v={d.next_followup} on={v=>set("next_followup",v)}/>
+              <Sel label="حالة المتابعة" v={d.followup_status} on={v=>set("followup_status",v)} opts={FOLLOWUP_STATUSES}/>
+              <Sel label="طريقة التواصل" v={d.contact_method} on={v=>set("contact_method",v)} opts={CONTACT_METHODS}/>
+            </div>
+
+            <label className="block mb-4">
+              <span className={"text-xs font-medium "+cMuted}>ملاحظات (ألوان مفضّلة، اعتراضات، اسم الدهان الحالي...)</span>
+              <textarea value={d.notes||""} onChange={e=>set("notes",e.target.value)} rows={3}
+                className={"w-full rounded-lg px-3 py-2 text-sm outline-none mt-1 "+cInput}/>
+            </label>
+
+            <div className="flex gap-2">
+              <button disabled={saving} onClick={onSave} className={"flex-1 rounded-xl py-2.5 text-sm font-bold disabled:opacity-60 "+cBtn}>
+                {saving?"جاري الحفظ...":"حفظ"}
+              </button>
+              <button onClick={()=>setEditor(null)} className={"px-5 rounded-xl py-2.5 text-sm font-bold "+cMuted+" "+cTrack+" "+cHover}>إلغاء</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ===== شاشة إعداد الجدول (تظهر لو الجدول غير موجود في Supabase) ===== */
+    function SrSetup({ onRetry }){
+      const sql=`create table if not exists showroom_customers (
+  id bigserial primary key,
+  name text, phone text, city text, showroom text,
+  customer_type text, source text,
+  project_type text, build_stage text, area_m2 numeric,
+  stage text default 'زائر جديد',
+  products text, competitor text,
+  quote_value numeric default 0, deal_value numeric default 0,
+  loss_reason text,
+  linked_painter text, linked_contractor text,
+  visit_date date, last_contact date, next_followup date,
+  followup_status text, contact_method text,
+  notes text, user_name text,
+  created_at timestamptz default now()
+);
+alter table showroom_customers enable row level security;
+create policy "read"  on showroom_customers for select using (true);
+create policy "write" on showroom_customers for insert with check (true);
+create policy "edit"  on showroom_customers for update using (true);
+create policy "del"   on showroom_customers for delete using (true);`;
+      const [copied,setCopied]=useState(false);
+      return (
+        <div className={"rounded-2xl p-5 "+cCard}>
+          <div className="flex items-center gap-2 mb-2">
+            <Icon n="shield" s={18} c="text-amber-500"/>
+            <h3 className="font-extrabold text-sm">خطوة واحدة قبل الاستخدام</h3>
+          </div>
+          <p className={"text-xs leading-relaxed mb-3 "+cMuted}>
+            جدول <b>showroom_customers</b> غير موجود في قاعدة بياناتك. افتح Supabase ← SQL Editor ← الصق الكود التالي ← Run، ثم اضغط «إعادة المحاولة».
+          </p>
+          <pre className={"rounded-xl p-3 text-[10px] leading-relaxed overflow-x-auto text-left "+cTrack} dir="ltr">{sql}</pre>
+          <div className="flex gap-2 mt-3">
+            <button onClick={()=>{ try{ navigator.clipboard.writeText(sql); setCopied(true); setTimeout(()=>setCopied(false),1800); }catch(e){} }}
+              className={"flex-1 rounded-xl py-2.5 text-xs font-bold "+cBtn}>{copied?"✓ تم نسخ الكود":"نسخ كود SQL"}</button>
+            <button onClick={onRetry} className={"px-5 rounded-xl py-2.5 text-xs font-bold "+cAccent+" "+cTrack+" "+cHover}>إعادة المحاولة</button>
+          </div>
+        </div>
+      );
+    }
+
+    /* ===== حفظ مرن: يتجاوز أي عمود ناقص في الجدول بدل ما تفشل العملية كلها ===== */
+    async function srWrite(mode, id, body){
+      const b={...body};
+      for(let i=0;i<10;i++){
+        const r = mode==="add" ? await db.from(SR_TABLE).insert([b])
+                               : await db.from(SR_TABLE).update(b).eq("id",id);
+        if(!r.error) return { ok:true };
+        const m=(r.error.message||"")+" "+(r.error.details||"");
+        const col=(m.match(/'([a-z_0-9]+)' column/i)||m.match(/column "?([a-z_0-9]+)"? of/i)||m.match(/column ([a-z_0-9]+)/i)||[])[1];
+        if(col && (col in b)){ delete b[col]; continue; }
+        return { ok:false, error:r.error.message||"خطأ غير متوقع" };
+      }
+      return { ok:false, error:"تعذّر الحفظ بعد عدة محاولات" };
+    }
+    function srIsMissingTable(err){
+      const m=String((err&&(err.message||err.details||err.code))||"").toLowerCase();
+      return m.includes("does not exist") || m.includes("could not find the table") || m.includes("42p01") || m.includes("pgrst205");
+    }
+
+    /* ===================== الصفحة الرئيسية ===================== */
+    function ShowroomPage({ onGo }){
+      const [rows,setRows]=useState(null);
+      const [err,setErr]=useState("");
+      const [needSetup,setNeedSetup]=useState(false);
+      const [elite,setElite]=useState({ painters:[], orgs:[], contractors:[] });
+      const [view,setView]=useState("board");
+      const [f,setF]=useState(srEmptyFilters());
+      const [panelOpen,setPanelOpen]=useState(false);
+      const [editor,setEditor]=useState(null);
+      const [saving,setSaving]=useState(false);
+      const [detailId,setDetailId]=useState(null);
+      const [target,setTarget]=useState(()=>Number(localStorage.getItem(SR_TARGET_KEY)||0));
+
+      async function load(){
+        setErr(""); setNeedSetup(false);
+        const r=await db.from(SR_TABLE).select("*").order("created_at",{ascending:false});
+        if(r.error){
+          if(srIsMissingTable(r.error)){ setNeedSetup(true); setRows([]); return; }
+          setErr(r.error.message||"تعذّر تحميل البيانات"); setRows([]); return;
+        }
+        setRows(r.data||[]);
+      }
+      async function loadElite(){
+        const [p,c]=await Promise.all([
+          db.from("painters").select("id,name,phone,city,showroom,rating,work_type").gte("rating",5),
+          db.from("contractors").select("id,name,phone,city,rating").gte("rating",5),
+        ]);
+        const pr=p.data||[];
+        setElite({
+          painters: pr.filter(x=>x.work_type!=="مؤسسة"),
+          orgs:     pr.filter(x=>x.work_type==="مؤسسة"),
+          contractors: c.data||[],
+        });
+      }
+      useEffect(()=>{ load(); loadElite(); },[]);
+
+      /* ---------- التصفية ---------- */
+      const filtered=useMemo(()=>{
+        const list=rows||[];
+        const q=(f.q||"").trim().toLowerCase();
+        const cold=Number(f.coldDays)||SR_COLD_DAYS;
+        const minV=Number(f.minValue)||0;
+        return list.filter(c=>{
+          if(q){
+            const hay=[c.name,c.phone,c.notes,c.linked_painter,c.linked_contractor].join(" ").toLowerCase();
+            if(!hay.includes(q)) return false;
+          }
+          if(f.city && c.city!==f.city) return false;
+          if(f.showroom && c.showroom!==f.showroom) return false;
+          if(f.type && c.customer_type!==f.type) return false;
+          if(f.stage && c.stage!==f.stage) return false;
+          if(f.build && c.build_stage!==f.build) return false;
+          if(f.competitor && c.competitor!==f.competitor) return false;
+          if(f.source && c.source!==f.source) return false;
+          if(minV && (Number(c.quote_value)||0)<minV) return false;
+          if(f.onlyDue){
+            const due=c.next_followup && c.next_followup<=TODAY() && c.followup_status!=="تمت" && c.followup_status!=="ملغاة";
+            if(!due) return false;
+          }
+          if(f.onlyHot   && srScore(c).score<70) return false;
+          if(f.onlyReady && c.build_stage!=="جاهز للدهان") return false;
+          if(f.onlyQuoted && !(["عرض سعر","تفاوض"].includes(c.stage))) return false;
+          if(f.onlyCold  && srDaysSince(c.last_contact)<=cold) return false;
+          if(f.onlyLinked   && !(c.linked_painter||c.linked_contractor)) return false;
+          if(f.onlyUnlinked &&  (c.linked_painter||c.linked_contractor)) return false;
+          return true;
+        });
+      },[rows,f]);
+
+      /* ---------- المؤشرات ---------- */
+      const stats=useMemo(()=>{
+        const list=rows||[];
+        const mk=new Date().toISOString().slice(0,7);
+        const inMonth=list.filter(c=>String(c.visit_date||c.created_at||"").slice(0,7)===mk);
+        const won=inMonth.filter(c=>c.stage==="تم البيع");
+        const lost=inMonth.filter(c=>c.stage==="خسارة");
+        const achieved=won.reduce((a,c)=>a+(Number(c.deal_value)||Number(c.quote_value)||0),0);
+        const open=list.filter(c=>SR_OPEN_STAGES.includes(c.stage));
+        const weighted=open.reduce((a,c)=>a+((Number(c.quote_value)||0)*((SR_STAGE_MAP[c.stage]||{p:0}).p)),0);
+        const due=list.filter(c=>c.next_followup && c.next_followup<=TODAY() && c.followup_status!=="تمت" && c.followup_status!=="ملغاة" && SR_OPEN_STAGES.includes(c.stage));
+        return {
+          visitors:inMonth.length, won:won.length, lost:lost.length, achieved,
+          avg: won.length?Math.round(achieved/won.length):0,
+          conv: inMonth.length?Math.round(won.length/inMonth.length*100):0,
+          openCount:open.length, weighted:Math.round(weighted), due:due.length,
+          hot:open.filter(c=>srScore(c).score>=70).length,
+        };
+      },[rows]);
+
+      const closeToday=useMemo(()=>
+        filtered.filter(c=>SR_OPEN_STAGES.includes(c.stage))
+                .map(c=>({c,s:srScore(c).score}))
+                .sort((a,b)=>b.s-a.s).slice(0,5)
+      ,[filtered]);
+
+      /* ---------- عمليات ---------- */
+      function blank(extra){
+        return { name:"", phone:"", customer_type:SR_TYPES[0], source:SR_SOURCES[0], city:"", showroom:"",
+          project_type:PROJECT_TYPES[0], build_stage:"جاهز للدهان", area_m2:"", competitor:"لا يوجد",
+          products:"[]", stage:"زائر جديد", quote_value:"", deal_value:"", loss_reason:"",
+          linked_painter:"", linked_contractor:"", visit_date:TODAY(), last_contact:TODAY(),
+          next_followup:srAddDays(2), followup_status:"مجدولة", contact_method:"زيارة ميدانية", notes:"", ...(extra||{}) };
+      }
+      async function save(){
+        const d=editor.data;
+        if(!String(d.name||"").trim()){ alert("اكتب اسم العميل"); return; }
+        setSaving(true);
+        const body={ ...d,
+          area_m2:Number(d.area_m2)||0, quote_value:Number(d.quote_value)||0, deal_value:Number(d.deal_value)||0,
+          user_name:currentUserName() };
+        ["visit_date","last_contact","next_followup"].forEach(k=>{ if(!body[k]) body[k]=null; });
+        const res=await srWrite(editor.mode, editor.id, body);
+        setSaving(false);
+        if(!res.ok){ alert("تعذّر الحفظ: "+res.error); return; }
+        logActivity(editor.mode==="add"?"إضافة":"تعديل", SR_TABLE, "عملاء المعرض", d.name);
+        const link=d.linked_painter||d.linked_contractor;
+        if(link && (editor.mode==="add" || link!==(editor.original||{})[d.linked_painter?"linked_painter":"linked_contractor"])){
+          logActivity("إحالة عميل", d.linked_painter?"painters":"contractors", "شبكة ٥ نجوم", link+" ← "+d.name);
+        }
+        setEditor(null); load();
+      }
+      async function patch(c, body){
+        if(c._pending){ alert("هذا السجل لم يتزامن بعد. انتظر رجوع الإنترنت ثم عدّله."); return; }
+        const res=await srWrite("edit", c.id, body);
+        if(!res.ok){ alert("تعذّر التحديث: "+res.error); return; }
+        if(body.stage) logActivity("نقل مرحلة → "+body.stage, SR_TABLE, "عملاء المعرض", c.name);
+        setRows(rs=>(rs||[]).map(x=>x.id===c.id?{...x,...body}:x));
+      }
+      async function remove(c){
+        if(!confirm("حذف العميل «"+(c.name||"")+"»؟")) return;
+        await db.from(SR_TABLE).delete().eq("id",c.id);
+        logActivity("حذف", SR_TABLE, "عملاء المعرض", c.name);
+        setDetailId(null); load();
+      }
+      function exportRows(){
+        const H=["الاسم","الجوال","النوع","المصدر","المدينة","المعرض","المرحلة","مرحلة البناء","المساحة م²",
+                 "قيمة العرض","قيمة الصفقة","المنافس","سبب الخسارة","دهان/مؤسسة ٥★","مطوّر ٥★",
+                 "المتابعة القادمة","آخر تواصل","الدرجة","التصنيف","ملاحظات"];
+        const R=filtered.map(c=>{ const s=srScore(c); return [c.name,c.phone,c.customer_type,c.source,c.city,c.showroom,
+          c.stage,c.build_stage,Number(c.area_m2)||0,Number(c.quote_value)||0,Number(c.deal_value)||0,c.competitor,
+          c.loss_reason,c.linked_painter,c.linked_contractor,c.next_followup,c.last_contact,s.score,s.tier,c.notes]; });
+        exportRowsXLSX("عملاء_المعرض_"+TODAY(),"عملاء المعرض",H,R);
+      }
+      function printList(){
+        const kp=kpisHtml([["زوار الشهر",stats.visitors],["صفقات مغلقة",stats.won],["معدل التحويل",stats.conv+"%"],
+          ["القيمة المحققة",srMoney(stats.achieved)+" ر.س"],["متوسط الفاتورة",srMoney(stats.avg)+" ر.س"],
+          ["الأنبوب المرجّح",srMoney(stats.weighted)+" ر.س"]]);
+        const rowsH=filtered.map(c=>{ const s=srScore(c);
+          return [c.name||"—",c.phone||"—",c.stage||"—",c.build_stage||"—",srMoney(c.quote_value),
+            (c.linked_painter||c.linked_contractor||"—"),c.next_followup||"—",s.score+" · "+s.tier]; });
+        printReport("متابعة عملاء المعرض", kp+tableHtml(
+          ["الاسم","الجوال","المرحلة","مرحلة البناء","قيمة العرض","مرتبط بـ","المتابعة القادمة","الأولوية"], rowsH));
+      }
+
+      const detail=(rows||[]).find(c=>String(c.id)===String(detailId))||null;
+      const Card=({children,cls=""})=>(<div className={"rounded-2xl p-4 "+cCard+" "+cls}>{children}</div>);
+
+      if(rows===null) return <ReportSkeleton/>;
+      if(needSetup)  return <SrSetup onRetry={()=>{ setRows(null); load(); }}/>;
+      if(err)        return <ReportError msg={err} onRetry={()=>{ setRows(null); load(); }}/>;
+
+      const pct = target>0 ? Math.min(100, Math.round(stats.achieved/target*100)) : 0;
+      const remaining = Math.max(0, target-stats.achieved);
+      const daysLeft = (()=>{ const d=new Date(); return new Date(d.getFullYear(),d.getMonth()+1,0).getDate()-d.getDate()+1; })();
+
+      return (
+        <div className="space-y-4">
+
+          {/* ===== الترويسة ===== */}
+          <Card>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white shrink-0" style={{background:"linear-gradient(135deg,#4f46e5,#7c3aed)"}}>
+                <Icon n="target" s={20}/>
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-extrabold text-sm">متابعة عملاء المعرض</h2>
+                <p className={"text-xs "+cMuted}>{(rows||[]).length} عميل · {stats.openCount} في الأنبوب · {stats.due} متابعة مستحقة</p>
+              </div>
+              <div className="mr-auto flex items-center gap-1.5 flex-wrap">
+                <div className={"flex rounded-xl p-1 "+cTrack}>
+                  {[["board","الأنبوب"],["list","قائمة"]].map(([k,l])=>(
+                    <button key={k} onClick={()=>setView(k)} className={"px-3 py-1.5 rounded-lg text-xs font-bold transition "+(view===k?cBtn:cMuted)}>{l}</button>
+                  ))}
+                </div>
+                <button onClick={exportRows} title="تصدير Excel" className={"p-2 rounded-xl "+cAccent+" "+cTrack+" "+cHover}><Icon n="download" s={16}/></button>
+                <button onClick={printList} title="طباعة / PDF" className={"p-2 rounded-xl "+cAccent+" "+cTrack+" "+cHover}><Icon n="printer" s={16}/></button>
+                <button onClick={()=>setEditor({mode:"add",id:null,data:blank()})} className={"px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 "+cBtn}>
+                  <Icon n="plus" s={14}/> عميل جديد
+                </button>
+              </div>
+            </div>
+          </Card>
+
+          {/* ===== هدف الشهر ===== */}
+          <Card>
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <Icon n="trophy" s={16} c="text-amber-500"/>
+              <span className="font-extrabold text-sm">هدف الشهر</span>
+              <div className="mr-auto flex items-center gap-1.5">
+                <input type="number" value={target||""} placeholder="اكتب هدفك بالريال"
+                  onChange={e=>{ const v=Number(e.target.value)||0; setTarget(v); try{ localStorage.setItem(SR_TARGET_KEY,String(v)); }catch(err){} }}
+                  className={"w-40 rounded-lg px-3 py-1.5 text-xs outline-none "+cInput}/>
+                <span className={"text-xs "+cMuted}>ريال</span>
+              </div>
+            </div>
+            {target>0 ? (
+              <>
+                <div className={"h-3 rounded-full overflow-hidden "+cTrack}>
+                  <div className="h-3 rounded-full transition-all" style={{width:pct+"%",background:pct>=100?"#16A34A":"linear-gradient(90deg,#4f46e5,#7c3aed)"}}/>
+                </div>
+                <div className="flex items-center justify-between mt-2 text-xs flex-wrap gap-2">
+                  <span className="font-extrabold">{srMoney(stats.achieved)} / {srMoney(target)} ريال · {pct}%</span>
+                  {remaining>0 ? (
+                    <span className={cMuted}>باقي <b>{srMoney(remaining)}</b> ريال في <b>{daysLeft}</b> يوم
+                      {stats.avg>0 && <> — أي ما يعادل <b>{Math.ceil(remaining/stats.avg)}</b> صفقة بمتوسط فاتورتك الحالي</>}</span>
+                  ) : <span className="font-bold text-emerald-600">🎉 تحقّق الهدف</span>}
+                </div>
+              </>
+            ) : (
+              <p className={"text-xs "+cMuted}>حدّد رقمًا تستهدفه هذا الشهر، وسيحسب لك النظام كم صفقة تحتاج بمتوسط فاتورتك الفعلي.</p>
+            )}
+          </Card>
+
+          {/* ===== المؤشرات ===== */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Kpi label="زوار الشهر" value={stats.visitors} color="#4F46E5" icon="user" sub={stats.hot+" عميل ساخن"}/>
+            <Kpi label="معدل التحويل" value={stats.conv+"%"} color="#16A34A" icon="chart" sub={stats.won+" بيع · "+stats.lost+" خسارة"}/>
+            <Kpi label="القيمة المحققة" value={srMoney(stats.achieved)} color="#D97706" icon="trophy" sub={"متوسط الفاتورة "+srMoney(stats.avg)}/>
+            <Kpi label="الأنبوب المرجّح" value={srMoney(stats.weighted)} color="#7C3AED" icon="bolt" sub={stats.openCount+" فرصة مفتوحة"}/>
+          </div>
+
+          {/* ===== لوحة الاستهداف ===== */}
+          <SrTargeting f={f} setF={setF} rows={rows||[]} open={panelOpen} setOpen={setPanelOpen}/>
+
+          {/* ===== أولويات الإغلاق ===== */}
+          {closeToday.length>0 && (
+            <Card>
+              <div className="flex items-center gap-2 mb-3">
+                <Icon n="bolt" s={16} c="text-red-500"/>
+                <h3 className="font-extrabold text-sm">أغلق هذه أولًا</h3>
+                <span className={"text-xs mr-auto "+cMuted}>أعلى ٥ بالأولوية من نتائج التصفية</span>
+              </div>
+              <div className="space-y-2">
+                {closeToday.map(({c,s},i)=>{
+                  const na=srNextAction(c);
+                  return (
+                    <button key={c.id} onClick={()=>setDetailId(c.id)} className={"w-full text-right rounded-xl p-3 flex items-center gap-2.5 "+cTrack+" "+cHover}>
+                      <span className="w-6 h-6 rounded-lg text-white text-[11px] font-extrabold flex items-center justify-center shrink-0" style={{background:SR_TIER_COLORS[srScore(c).tier]}}>{i+1}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-extrabold truncate">{c.name} <span className={"font-medium "+cMuted}>· {c.stage}</span></div>
+                        <div className="text-[11px] mt-0.5 truncate" style={{color:na.c}}>{na.t}</div>
+                      </div>
+                      <div className="text-left shrink-0">
+                        <div className="text-xs font-extrabold">{srMoney(c.quote_value)}</div>
+                        <div className={"text-[10px] "+cMuted}>ريال</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          {/* ===== الأنبوب / القائمة ===== */}
+          {filtered.length===0 ? (
+            <ReportEmpty text={(rows||[]).length===0?"ابدأ بإضافة أول عميل زار المعرض اليوم.":"ما فيه عميل يطابق التصفية الحالية."}/>
+          ) : view==="board" ? (
+            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+              {SR_STAGES.map(s=>{
+                const col=filtered.filter(c=>c.stage===s.k).sort((a,b)=>srScore(b).score-srScore(a).score);
+                const sum=col.reduce((a,c)=>a+(Number(c.quote_value)||Number(c.deal_value)||0),0);
+                return (
+                  <div key={s.k} className="w-[268px] shrink-0">
+                    <div className="rounded-xl p-2.5 mb-2 text-white" style={{background:s.color}}>
+                      <div className="flex items-center gap-1.5">
+                        <Icon n={s.icon} s={14}/>
+                        <span className="text-xs font-extrabold">{s.k}</span>
+                        <span className="mr-auto text-[11px] font-bold bg-white/25 px-1.5 rounded-md">{col.length}</span>
+                      </div>
+                      <div className="text-[11px] mt-1 opacity-90">{srMoney(sum)} ريال · احتمال {Math.round(s.p*100)}%</div>
+                    </div>
+                    <div className="space-y-2">
+                      {col.length===0
+                        ? <div className={"rounded-xl p-3 text-[11px] text-center "+cTrack+" "+cMuted}>فارغة</div>
+                        : col.map(c=><SrCard key={c.id} c={c} onOpen={x=>setDetailId(x.id)} onMove={(x,st)=>patch(x,{stage:st})}/>)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filtered.map(c=><SrCard key={c.id} c={c} onOpen={x=>setDetailId(x.id)} onMove={(x,st)=>patch(x,{stage:st})}/>)}
+            </div>
+          )}
+
+          {/* ===== التحليلات ===== */}
+          <div className="grid lg:grid-cols-2 gap-3">
+            <Card>
+              <h3 className="font-extrabold text-sm mb-3">قمع البيع</h3>
+              <Funnel stages={SR_STAGES.filter(s=>s.k!=="خسارة").map(s=>({label:s.k,value:filtered.filter(c=>c.stage===s.k).length,color:s.color}))}/>
+            </Card>
+            <Card>
+              <h3 className="font-extrabold text-sm mb-3">أسباب الخسارة</h3>
+              {(()=>{ const lost=(rows||[]).filter(c=>c.stage==="خسارة");
+                const d=SR_LOSS.map((r,i)=>({label:r,value:lost.filter(c=>c.loss_reason===r).length,color:COLORS[i%COLORS.length]})).filter(x=>x.value>0);
+                return d.length? <><Bars data={d}/><p className={"text-[11px] mt-3 "+cMuted}>أكبر سبب هو أول شيء تعالجه في نصّك البيعي.</p></>
+                                : <div className={"text-xs "+cMuted}>ما فيه خسائر مسجّلة. سجّل سبب كل خسارة — هذي أهم بيانات عندك.</div>; })()}
+            </Card>
+            <Card>
+              <h3 className="font-extrabold text-sm mb-3">المنافسون في المعرض</h3>
+              {(()=>{ const d=SR_COMPETITORS.filter(x=>x!=="لا يوجد").map((r,i)=>({label:r,value:(rows||[]).filter(c=>c.competitor===r).length,color:COMPANY_COLORS[r]||COLORS[i%COLORS.length]})).filter(x=>x.value>0);
+                return d.length? <Bars data={d}/> : <div className={"text-xs "+cMuted}>ما سُجّل أي منافس بعد.</div>; })()}
+            </Card>
+            <Card>
+              <h3 className="font-extrabold text-sm mb-3">أداء المعارض</h3>
+              {(()=>{ const d=SHOWROOMS_OPTS.map((r,i)=>({label:r,value:(rows||[]).filter(c=>c.showroom===r&&c.stage==="تم البيع").reduce((a,c)=>a+(Number(c.deal_value)||Number(c.quote_value)||0),0),color:COLORS[i%COLORS.length]})).filter(x=>x.value>0).sort((a,b)=>b.value-a.value).slice(0,8);
+                return d.length? <Bars data={d}/> : <div className={"text-xs "+cMuted}>لا توجد مبيعات مسجّلة بعد.</div>; })()}
+            </Card>
+          </div>
+
+          {/* ===== شبكة الـ٥ نجوم ===== */}
+          <SrElite elite={elite} onRefer={(r,kind)=>{
+            setEditor({ mode:"add", id:null, data: blank(
+              kind==="contractors"
+                ? { linked_contractor:r.name, source:"إحالة مطوّر", city:r.city||"" }
+                : { linked_painter:r.name, source:"إحالة دهان", city:r.city||"", showroom:r.showroom||"" }
+            )});
+          }}/>
+
+          <SrEditor editor={editor} setEditor={setEditor} onSave={save} elite={elite} saving={saving}/>
+          <SrDetail c={detail} elite={elite} onClose={()=>setDetailId(null)}
+            onEdit={c=>{ setDetailId(null); setEditor({mode:"edit",id:c.id,original:c,data:{...blank(),...c}}); }}
+            onDelete={remove} onPatch={patch}/>
+        </div>
+      );
+    }
+
     /* ===== التطبيق ===== */
-    const NAV=[["dashboard","اللوحة الرئيسية"],["tasks","مهامي اليوم"],["plan","الخطة الأسبوعية"],["painters","الدهانين"],["projects","المواقع"],["contractors","المطوّرون العقاريون"],["visits","الزيارات"],["trainings","التدريبات"],["market","رصد السوق"],["products","المنتجات"],["marketshare","الحصة السوقية"],["insights","رؤى ذكية"],["timeline","سجل النشاط"],["reports","التقارير"]];
+    const NAV=[["dashboard","اللوحة الرئيسية"],["tasks","مهامي اليوم"],["showroom","عملاء المعرض"],["plan","الخطة الأسبوعية"],["painters","الدهانين"],["projects","المواقع"],["contractors","المطوّرون العقاريون"],["visits","الزيارات"],["trainings","التدريبات"],["market","رصد السوق"],["products","المنتجات"],["marketshare","الحصة السوقية"],["insights","رؤى ذكية"],["timeline","سجل النشاط"],["reports","التقارير"]];
     const TITLES=Object.fromEntries(NAV);
 
     function App() {
@@ -2109,8 +3326,19 @@ const DEFAULT_CATALOG = [
       const [gq,setGq]=useState(""); const [results,setResults]=useState([]); const [notifs,setNotifs]=useState([]);
       const [quickOpen,setQuickOpen]=useState(false); const [prefill,setPrefill]=useState(null);
       const [notifOn,setNotifOn]=useState(notifEnabled()); const [ack,setAck]=useState(0);
+      const sync=useSync();
 
       useEffect(()=>{ document.documentElement.classList.toggle("dark",dark); },[dark]);
+
+      /* مزامنة الطابور: عند الفتح، كل دقيقة، وعند رجوع التطبيق للمقدمة */
+      useEffect(()=>{
+        const run=()=>{ if(navigator.onLine!==false) flushOutbox(); };
+        const t=setTimeout(run,1500);
+        const iv=setInterval(run,60*1000);
+        const onVis=()=>{ if(document.visibilityState==="visible") run(); };
+        document.addEventListener("visibilitychange",onVis);
+        return ()=>{ clearTimeout(t); clearInterval(iv); document.removeEventListener("visibilitychange",onVis); };
+      },[]);
       async function loadNotifs(){
         const today=TODAY();
         const [pr,t,p,c]=await Promise.all([db.from("projects").select("*"),db.from("trainings").select("*"),db.from("painters").select("*"),db.from("contractors").select("*")]);
@@ -2120,6 +3348,13 @@ const DEFAULT_CATALOG = [
           if(plan[tIso]) list.push({level:"high",title:"📍 زيارة الغد",text:`غداً مخطّط لزيارة مدينة ${plan[tIso]}`,go:"plan"}); }catch(e){}
         const allF=[...(p.data||[]),...(pr.data||[]),...(c.data||[])].filter(x=>x.next_followup&&x.next_followup<today&&x.followup_status!=="تمت"&&x.followup_status!=="ملغاة");
         allF.forEach(x=>list.push({level:"high",title:"متابعة متأخرة",text:`${x.name} — كان موعدها ${x.next_followup}`,go:"tasks"}));
+        // عملاء المعرض المستحقّون
+        try{
+          const sr=await db.from("showroom_customers").select("name,stage,next_followup,followup_status,quote_value");
+          (sr.data||[]).filter(x=>x.next_followup&&x.next_followup<=today&&x.followup_status!=="تمت"&&x.followup_status!=="ملغاة"&&SR_OPEN_STAGES.includes(x.stage))
+            .forEach(x=>list.push({level:x.next_followup<today?"high":"mid",title:"🎨 عميل معرض يحتاج متابعة",
+              text:`${x.name} — ${x.stage}${Number(x.quote_value)?" · "+srMoney(x.quote_value)+" ريال":""}`,go:"showroom"}));
+        }catch(e){}
         (t.data||[]).filter(x=>x.date&&x.date>=today).forEach(x=>list.push({level:"mid",title:"تدريب قادم",text:`${x.name} — ${x.date}`,go:"trainings"}));
         setNotifs(list);
       }
@@ -2190,9 +3425,12 @@ const DEFAULT_CATALOG = [
                 <button onClick={()=>setDark(!dark)} className="p-2 rounded-xl hover:bg-white/10"><Icon n={dark?"sun":"moon"}/></button>
               </div>
             </header>
+            <SyncBar/>
             <main className="p-4 max-w-5xl mx-auto">
+              <div key={"ver"+(sync.lastSync||"")}>
               {tab==="dashboard"&&<Dashboard key="dash" onGo={go}/>}
               {tab==="tasks"&&<TasksToday key="tasks" onGo={go}/>}
+              {tab==="showroom"&&<ShowroomPage key="sr" onGo={go}/>}
               {tab==="plan"&&<WeeklyPlanPage key="plan" onGo={go}/>}
               {tab==="market"&&<MarketMonitorPage key="mon"/>}
               {tab==="products"&&<ProductsPage key="prod"/>}
@@ -2201,6 +3439,7 @@ const DEFAULT_CATALOG = [
               {tab==="timeline"&&<Timeline key="tl"/>}
               {tab==="reports"&&<ReportsPage key="rep" onGo={go}/>}
               {CONFIG[tab]&&<Section key={tab} cfg={CONFIG[tab]} onGo={go} prefill={prefillFor(tab)} clearPrefill={()=>setPrefill(null)}/>}
+              </div>
               <div className={"text-center text-xs py-4 "+cMuted}>نظام الجزيرة الميداني — مربوط بقاعدة بيانات Supabase</div>
             </main>
           </div>
