@@ -25,6 +25,10 @@
        طبقة واحدة من المتغيّرات تحكم كل الشاشات
        ════════════════════════════════════════════════════════════ */
     :root{
+      /* يجعل المتصفّح يرسم القوائم المنسدلة ومنتقي التاريخ وأشرطة التمرير بسمة التطبيق
+         لا بسمة نظام الجوال — هذا سبب "القائمة السوداء" */
+      color-scheme: light;
+
       /* ——— الهوية ——— */
       --brand:#5b58eb; --brand-600:#4f46e5; --brand-700:#4338ca; --brand-400:#8b8af5;
       --brand-soft:#eef0ff; --brand-ring:rgba(91,88,235,.32);
@@ -66,6 +70,7 @@
 
     /* ——— الوضع الليلي: أسطح شبه سوداء بحدود شعرية (نمط Linear) ——— */
     .dark{
+      color-scheme: dark;
       --s0:#08090f; --s1:#0f1119; --s2:#171a25; --s3:#1f2331;
       --line:rgba(255,255,255,.075); --line-2:rgba(255,255,255,.13);
       --txt:#eef1f7; --txt-2:#a3acc0; --txt-3:#6f7a91;
@@ -144,14 +149,65 @@
     .btn-ghost:hover{ background:var(--s3); color:var(--txt); border-color:var(--line); }
 
     .field{
-      background:var(--s2); border:1px solid var(--line);
+      background-color:var(--s2); border:1px solid var(--line);
       color:var(--txt); border-radius:var(--r-sm);
       transition:border-color var(--d-1), box-shadow var(--d-1), background var(--d-1);
     }
     .field::placeholder{ color:var(--txt-3); }
     .field:hover{ border-color:var(--line-2); }
-    .field:focus{ outline:none; background:var(--s1); border-color:var(--brand); box-shadow:0 0 0 3.5px var(--brand-ring); }
+    .field:focus{ outline:none; background-color:var(--s1); border-color:var(--brand); box-shadow:0 0 0 3.5px var(--brand-ring); }
     .field:disabled{ opacity:.55; cursor:not-allowed; }
+
+    /* طبقة تعتيم موحّدة لكل النوافذ */
+    .dlg{ background:rgba(6,8,15,.55); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); }
+
+    /* ════════ عناصر النماذج الأصلية ════════ */
+    /* سهم مخصّص للقوائم المنسدلة (على اليسار لأن الواجهة RTL) */
+    select.field{
+      -webkit-appearance:none; -moz-appearance:none; appearance:none;
+      background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7590' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat:no-repeat; background-position:left 10px center; background-size:15px;
+      padding-left:32px; cursor:pointer;
+    }
+    .dark select.field{
+      background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238e99b3' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    }
+    /* خيارات القائمة: خلفية ونص صريحان في الوضعين */
+    select.field option, select.field optgroup, select option{
+      background:var(--s1); color:var(--txt); font-weight:600;
+    }
+    /* منتقي التاريخ: أيقونة ظاهرة في الوضع الليلي */
+    input.field[type="date"], input.field[type="month"], input.field[type="time"]{ cursor:pointer; }
+    input.field::-webkit-calendar-picker-indicator{ opacity:.55; cursor:pointer; transition:opacity var(--d-1); }
+    input.field::-webkit-calendar-picker-indicator:hover{ opacity:1; }
+    .dark input.field::-webkit-calendar-picker-indicator{ filter:invert(1) brightness(1.4); opacity:.6; }
+    /* حقول الأرقام: إخفاء الأسهم الصغيرة المزعجة على الجوال */
+    input.field[type="number"]{ -moz-appearance:textfield; }
+    input.field[type="number"]::-webkit-outer-spin-button,
+    input.field[type="number"]::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+    /* مناطق النص */
+    textarea.field{ resize:vertical; min-height:76px; line-height:1.7; }
+    /* حالة الخطأ */
+    .field.invalid{ border-color:var(--err) !important; box-shadow:0 0 0 3.5px var(--err-bg) !important; }
+
+    /* ════════ النماذج ════════ */
+    .form-label{ font-size:11.5px; font-weight:700; color:var(--txt-2); display:block; margin-bottom:6px; }
+    .req::after{ content:" *"; color:var(--err); font-weight:800; }
+    .form-hint{ font-size:10.5px; color:var(--txt-3); margin-top:5px; display:block; }
+    .form-err{ font-size:10.5px; color:var(--err); font-weight:700; margin-top:5px; display:flex; align-items:center; gap:4px; }
+    .form-section{ font-size:10px; font-weight:800; color:var(--txt-3); letter-spacing:.04em;
+      display:flex; align-items:center; gap:8px; margin:2px 0 10px; }
+    .form-section::after{ content:""; flex:1; height:1px; background:var(--line); }
+    /* ترويسة وتذييل ثابتان في النوافذ الطويلة */
+    .sheet-head{ position:sticky; top:0; z-index:3; background:var(--s1);
+      margin:-20px -20px 16px; padding:20px 20px 12px; border-bottom:1px solid var(--line); }
+    .sheet-foot{ position:sticky; bottom:0; z-index:3; background:var(--s1);
+      margin:18px -20px -20px; padding:12px 20px 20px; border-top:1px solid var(--line); }
+    /* حقل مع أيقونة داخلية */
+    .field-wrap{ position:relative; }
+    .field-wrap .field-ico{ position:absolute; right:10px; top:50%; transform:translateY(-50%);
+      color:var(--txt-3); pointer-events:none; }
+    .field-wrap .has-ico{ padding-right:34px; }
 
     /* ════════ الوصولية: حلقات تركيز واضحة للكيبورد فقط ════════ */
     :focus{ outline:none; }
@@ -1043,7 +1099,18 @@ const DEFAULT_CATALOG = [
           </div>
         </div>);
     }
-    function Inp({ label, v, on, type="text" }) { return (<label className="block"><span className={"text-xs font-medium "+cMuted}>{label}</span><input type={type} value={v} onChange={e=>on(e.target.value)} className={"w-full rounded-lg px-3 py-2 text-sm outline-none mt-1 "+cInput}/></label>); }
+    function Inp({ label, v, on, type="text", icon, hint, required, placeholder, autoFocus, invalid }) {
+      return (<label className="block">
+        <span className={"form-label"+(required?" req":"")}>{label}</span>
+        <span className="field-wrap block">
+          {icon?<span className="field-ico"><Icon n={icon} s={14}/></span>:null}
+          <input type={type} value={v==null?"":v} onChange={e=>on(e.target.value)}
+            placeholder={placeholder} autoFocus={autoFocus} inputMode={type==="number"?"decimal":undefined}
+            aria-invalid={invalid?"true":undefined} aria-required={required?"true":undefined}
+            className={"field w-full rounded-lg px-3 py-2.5 text-sm outline-none "+(icon?"has-ico ":"")+(invalid?"invalid":"")}/>
+        </span>
+        {invalid?<span className="form-err"><Icon n="close" s={11}/> هذا الحقل مطلوب</span>:(hint?<span className="form-hint">{hint}</span>:null)}
+      </label>); }
 
     /* ===== رسوم بيانية ذكية (SVG) ===== */
     function Donut({ data, size=148, centerLabel="الإجمالي" }) {
@@ -1090,13 +1157,27 @@ const DEFAULT_CATALOG = [
           <div className={"h-7 rounded-lg overflow-hidden "+cTrack}><div className="h-7 rounded-lg flex items-center justify-end px-2 text-white text-[11px] font-bold transition-all" style={{width:Math.max(pct,7)+"%",background:s.color}}>{s.value||""}</div></div>
         </div>);})}</div>);
     }
-    function Sel({ label, v, on, opts }) { return (<label className="block"><span className={"text-xs font-medium "+cMuted}>{label}</span><select value={v} onChange={e=>on(e.target.value)} className={"w-full rounded-lg px-3 py-2 text-sm outline-none mt-1 "+cInput}>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select></label>); }
+    function Sel({ label, v, on, opts, hint, required, autoFocus }) {
+      return (<label className="block">
+        <span className={"form-label"+(required?" req":"")}>{label}</span>
+        <select value={v==null?"":v} onChange={e=>on(e.target.value)} autoFocus={autoFocus}
+          aria-required={required?"true":undefined}
+          className="field w-full rounded-lg px-3 py-2.5 text-sm outline-none">
+          {opts.map(o=><option key={o} value={o}>{o===""?"— الكل —":o}</option>)}
+        </select>
+        {hint?<span className="form-hint">{hint}</span>:null}
+      </label>); }
 
     /* حقل اختيار مرجعي من جدول آخر */
     function RefField({ label, v, on, options }) {
-      return (<label className="block"><span className={"text-xs font-medium "+cMuted}>{label}</span>
-        <input list={"ref-"+label} value={v||""} onChange={e=>on(e.target.value)} placeholder="اكتب أو اختر..." className={"w-full rounded-lg px-3 py-2 text-sm outline-none mt-1 "+cInput}/>
+      return (<label className="block"><span className="form-label">{label}</span>
+        <span className="field-wrap block">
+          <span className="field-ico"><Icon n="search" s={13}/></span>
+          <input list={"ref-"+label} value={v||""} onChange={e=>on(e.target.value)} placeholder="اكتب أو اختر من القائمة..."
+            className="field has-ico w-full rounded-lg px-3 py-2.5 text-sm outline-none"/>
+        </span>
         <datalist id={"ref-"+label}>{options.map(o=><option key={o} value={o}/>)}</datalist>
+        {options.length>0?<span className="form-hint">{options.length} خيارًا متاحًا</span>:null}
       </label>);
     }
     /* حقل مرجعي متعدد: اختيار/إضافة أكثر من عنصر (مثلاً عدة مواقع لزيارة واحدة) */
@@ -1372,7 +1453,7 @@ const DEFAULT_CATALOG = [
         setSaving(false); onSaved&&onSaved(); onClose();
       }
       return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3" onClick={onClose}>
+        <div role="dialog" aria-modal="true" className="fixed inset-0 dlg z-50 flex items-end sm:items-center justify-center p-3" onClick={onClose}>
           <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-md "+cCard}>
             <div className="flex items-center justify-between mb-4"><div className="font-bold">تسجيل تفاعل جديد</div><button onClick={onClose} className={cMuted}><Icon n="close" s={18}/></button></div>
             <div className="space-y-3">
@@ -1394,6 +1475,11 @@ const DEFAULT_CATALOG = [
       const [q,setQ]=useState(""); const [filters,setFilters]=useState({}); const [vmode,setVmode]=useState("cards");
       const [view,setView]=useState("list"); const [selId,setSelId]=useState(null);
       const [editor,setEditor]=useState(null); const [saving,setSaving]=useState(false); const [geoMsg,setGeoMsg]=useState("");
+      /* Esc يغلق نافذة الإضافة/التعديل */
+      useEffect(()=>{ if(!editor) return;
+        const h=e=>{ if(e.key==="Escape" && !saving) setEditor(null); };
+        window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h);
+      },[editor,saving]);
       const [refOpts,setRefOpts]=useState({});
       const [quoteFilter,setQuoteFilter]=useState("الكل");
       const [showInteraction,setShowInteraction]=useState(false); const [interactionsKey,setInteractionsKey]=useState(0);
@@ -1578,9 +1664,16 @@ const DEFAULT_CATALOG = [
           )}
 
           {editor&&(
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-3" onClick={()=>setEditor(null)}>
-              <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-lg max-h-[90vh] overflow-y-auto "+cCard}>
-                <div className="flex items-center justify-between mb-4"><div className="font-bold">{editor.mode==="add"?"إضافة سجل جديد":"تعديل السجل"}</div><button onClick={()=>setEditor(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" role="dialog" aria-modal="true"
+              style={{background:"rgba(6,8,15,.55)",backdropFilter:"blur(3px)"}} onClick={()=>setEditor(null)}>
+              <div dir="rtl" onClick={e=>e.stopPropagation()} className="card card-raised sheet p-5 w-full sm:max-w-lg max-h-[92vh] overflow-y-auto">
+                <div className="sheet-head flex items-center justify-between">
+                  <div>
+                    <div className="font-extrabold text-sm">{editor.mode==="add"?cfg.addLabel:("تعديل — "+(editor.data[cfg.fields[0].key]||cfg.title))}</div>
+                    <div className="text-[11px] txt-dim mt-0.5">{cfg.title} · الحقول المعلّمة بـ<span style={{color:"var(--err)"}}>*</span> مطلوبة</div>
+                  </div>
+                  <button onClick={()=>setEditor(null)} aria-label="إغلاق" className="p-2 rounded-lg txt-muted row-hover"><Icon n="close" s={16}/></button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {cfg.fields.map(f=>{
                     if(f.type==="select")return <Sel key={f.key} label={f.label} v={editor.data[f.key]} on={v=>setField(f.key,v)} opts={f.opts}/>;
@@ -1588,11 +1681,21 @@ const DEFAULT_CATALOG = [
                     if(f.type==="refs")return <RefsField key={f.key} label={f.label} v={editor.data[f.key]} on={v=>setField(f.key,v)} options={refOpts[f.refTable]||[]}/>;
                     if(f.type==="products")return <ProductsField key={f.key} label={f.label} v={editor.data[f.key]} on={v=>setField(f.key,v)}/>;
                     if(f.type==="images")return <ImagesField key={f.key} label={f.label} v={editor.data[f.key]} on={v=>setField(f.key,v)} folder={cfg.table}/>;
-                    return <Inp key={f.key} label={f.label} type={inputType(f)} v={editor.data[f.key]} on={v=>setField(f.key,v)}/>;
+                    return <Inp key={f.key} label={f.label} type={inputType(f)} v={editor.data[f.key]} on={v=>setField(f.key,v)}
+                      required={f.key===cfg.fields[0].key} autoFocus={f.key===cfg.fields[0].key}
+                      icon={f.key==="phone"?"link":(f.type==="date"?"clock":(f.type==="number"?"chart":null))}
+                      invalid={f.key===cfg.fields[0].key && editor.touched && !String(editor.data[f.key]||"").trim()}/>;
                   })}
                 </div>
                 {cfg.geo&&(<div className="flex items-center gap-2 mt-3"><button type="button" onClick={captureGeo} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold "+cTrack+" "+cAccent+" "+cHover}><Icon n="pin" s={14}/> التقاط الموقع الحالي</button><span className={"text-xs "+cMuted}>{geoMsg||(editor.data.lat?`📍 ${editor.data.lat}, ${editor.data.lng}`:"يُلتقط الموقع تلقائياً عند الحفظ")}</span></div>)}
-                <button onClick={save} disabled={saving} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 disabled:opacity-50 "+cBtn}>{saving?"جاري الحفظ...":"حفظ"}</button>
+                <div className="sheet-foot flex gap-2">
+                  <button onClick={()=>{ setEditor(e=>({...e,touched:true})); save(); }} disabled={saving}
+                    className="btn-primary flex-1 rounded-xl py-3 text-sm font-bold disabled:opacity-50 press inline-flex items-center justify-center gap-2">
+                    {saving?<><Icon n="refresh" s={15} c="spin"/> جاري الحفظ...</>:<><Icon n="save" s={15}/> حفظ</>}
+                  </button>
+                  <button onClick={()=>setEditor(null)} disabled={saving}
+                    className="btn-ghost rounded-xl px-5 py-3 text-sm font-bold press">إلغاء</button>
+                </div>
               </div>
             </div>
           )}
@@ -1631,7 +1734,7 @@ const DEFAULT_CATALOG = [
         await syncVisit(payload, "add"); setSaving(false);
         logActivity("إضافة","visits","الزيارات",d.target); onSaved&&onSaved(); onClose();
       }
-      return (<div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-3" onClick={onClose}>
+      return (<div role="dialog" aria-modal="true" className="fixed inset-0 dlg z-50 flex items-end sm:items-center justify-center p-0 sm:p-3" onClick={onClose}>
         <div dir="rtl" onClick={e=>e.stopPropagation()} className={"w-full max-w-md max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-5 pop "+cCard}>
           <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2 font-extrabold"><span className="w-8 h-8 rounded-xl brand-grad text-white flex items-center justify-center"><Icon n="bolt" s={16}/></span> زيارة ميدانية سريعة</div><button onClick={onClose} className={cMuted}><Icon n="close" s={20}/></button></div>
           {/* المدينة */}
@@ -1954,7 +2057,7 @@ const DEFAULT_CATALOG = [
               </div>)}
             </div>);})}
 
-          {editor&&(<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setEditor(null)}>
+          {editor&&(<div role="dialog" aria-modal="true" className="fixed inset-0 dlg z-50 flex items-center justify-center p-4" onClick={()=>setEditor(null)}>
             <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-sm pop "+cCard}>
               <div className="flex items-center justify-between mb-4"><div className="font-bold">{editor.idx==null?"إضافة منتج":"تعديل منتج"}</div><button onClick={()=>setEditor(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
               <div className="space-y-3">
@@ -1965,7 +2068,7 @@ const DEFAULT_CATALOG = [
               <button onClick={saveProduct} className={"w-full rounded-xl py-2.5 text-sm font-bold mt-4 "+cBtn}>حفظ</button>
             </div></div>)}
 
-          {famEditor&&(<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={()=>setFamEditor(null)}>
+          {famEditor&&(<div role="dialog" aria-modal="true" className="fixed inset-0 dlg z-50 flex items-center justify-center p-4" onClick={()=>setFamEditor(null)}>
             <div dir="rtl" onClick={e=>e.stopPropagation()} className={"rounded-2xl p-5 w-full max-w-sm pop "+cCard}>
               <div className="flex items-center justify-between mb-4"><div className="font-bold">{famEditor.idx==null?"عائلة جديدة":"تعديل العائلة"}</div><button onClick={()=>setFamEditor(null)} className={cMuted}><Icon n="close" s={18}/></button></div>
               <div className="space-y-3">
@@ -2758,7 +2861,7 @@ const DEFAULT_CATALOG = [
       if(!open) return null;
       const items = readFailed();
       return (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 dlg flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
           <div className={"w-full sm:max-w-lg max-h-[85vh] overflow-y-auto p-4 pop "+cCard} onClick={e=>e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-extrabold text-sm text-red-600 dark:text-red-400">عمليات لم تُحفظ في السحابة</h3>
@@ -3140,7 +3243,7 @@ const DEFAULT_CATALOG = [
       const gap=srDaysSince(c.last_contact);
 
       return (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 dlg flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
           <div className={"w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto p-4 pop "+cCard} onClick={e=>e.stopPropagation()}>
             <div className="flex items-start gap-2 mb-3">
               <div className="min-w-0 flex-1">
@@ -3270,7 +3373,7 @@ const DEFAULT_CATALOG = [
       const contractorOpts=elite.contractors.map(x=>x.name).filter(Boolean);
       const est=srEstimate(d.area_m2);
       return (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center sm:p-4" onClick={()=>setEditor(null)}>
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 dlg flex items-end sm:items-center justify-center sm:p-4" onClick={()=>setEditor(null)}>
           <div className={"w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto p-4 pop "+cCard} onClick={e=>e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-extrabold text-sm">{editor.mode==="add"?"عميل معرض جديد":"تعديل بيانات العميل"}</h3>
