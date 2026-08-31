@@ -527,6 +527,26 @@
   /* الشريط السفلي */
   .bottom-nav{ padding-bottom:env(safe-area-inset-bottom); }
 
+  /* ════════════════ لوحة الإشعارات على الجوال ════════════════
+     على الشاشات الصغيرة تُثبَّت اللوحة على عرض الشاشة كاملًا بدل تعليقها
+     أسفل الزر، فلا يخرج نصفها خارج حدود الشاشة. */
+  .notif-pop{ max-height:calc(100vh - 90px); display:flex; flex-direction:column; }
+  .notif-list{ overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  @media (max-width: 767px){
+    .notif-pop{
+      position:fixed !important;
+      top:63px !important;
+      left:10px !important;
+      right:10px !important;
+      width:auto !important;
+      max-width:none !important;
+      margin:0 !important;
+      max-height:calc(100vh - 150px) !important;
+      max-height:calc(100dvh - 150px) !important;
+    }
+    .notif-list{ max-height:none !important; flex:1 1 auto; }
+  }
+
   /* ════════════════ الجداول ════════════════ */
   .table-wrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
   table.data{ width:100%; border-collapse:collapse; font-size:var(--t-2xs); }
@@ -1088,6 +1108,62 @@ const DEFAULT_CATALOG = [
       try{ new Notification(title,{body,dir:"rtl",lang:"ar",tag:todayTag,icon:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234338CA'/%3E%3Ctext x='50' y='70' font-size='58' fill='white' text-anchor='middle' font-family='sans-serif' font-weight='bold'%3E%D8%AC%3C/text%3E%3C/svg%3E"}); sent[todayTag]=1; localStorage.setItem(NOTIF_SENT_KEY,JSON.stringify(sent)); }catch(e){}
     }
 
+    /* ═══════════ ملء الشاشة على الجوال ═══════════
+       عند فتح الملف من كروم يبقى شريط المتصفّح ظاهرًا. واجهة Fullscreen تخفيه
+       تمامًا فيظهر النظام كتطبيق. التفضيل يُحفظ ويُعاد تطبيقه عند أول لمسة
+       بعد فتح الصفحة (المتصفّح لا يسمح بملء الشاشة إلا بعد تفاعل المستخدم). */
+    const FS_KEY="jazeera_fullscreen";
+    function fsSupported(){
+      const d=document.documentElement;
+      return !!(d.requestFullscreen||d.webkitRequestFullscreen||d.webkitRequestFullScreen);
+    }
+    function isFullscreen(){
+      return !!(document.fullscreenElement||document.webkitFullscreenElement||window.matchMedia("(display-mode: fullscreen)").matches);
+    }
+    async function enterFullscreen(silent){
+      const d=document.documentElement;
+      const req=d.requestFullscreen||d.webkitRequestFullscreen||d.webkitRequestFullScreen;
+      if(!req){ if(!silent) toast("متصفّحك لا يدعم ملء الشاشة","warn"); return false; }
+      try{
+        await req.call(d,{navigationUI:"hide"});
+        try{ localStorage.setItem(FS_KEY,"1"); }catch(e){}
+        try{ screen.orientation && screen.orientation.lock && screen.orientation.lock("portrait").catch(()=>{}); }catch(e){}
+        return true;
+      }catch(e){ if(!silent) toast("تعذّر تفعيل ملء الشاشة","warn"); return false; }
+    }
+    function leaveFullscreen(){
+      const ex=document.exitFullscreen||document.webkitExitFullscreen||document.webkitCancelFullScreen;
+      try{ ex && ex.call(document); }catch(e){}
+      try{ localStorage.setItem(FS_KEY,"0"); }catch(e){}
+    }
+    /* إعادة الدخول التلقائي لملء الشاشة عند أول لمسة بعد فتح التطبيق */
+    (function armFullscreen(){
+      let want=false; try{ want=localStorage.getItem(FS_KEY)==="1"; }catch(e){}
+      if(!want) return;
+      const once=()=>{
+        document.removeEventListener("pointerdown",once,true);
+        document.removeEventListener("touchstart",once,true);
+        if(!isFullscreen()) enterFullscreen(true);
+      };
+      document.addEventListener("pointerdown",once,true);
+      document.addEventListener("touchstart",once,true);
+    })();
+
+    /* بيان التطبيق كـ blob بدل data: — كروم يتجاهل بيانات data: فلا يفتح
+       الاختصار بوضع standalone. blob من نفس الأصل يُقبل عند تشغيل الملف من خادم. */
+    (function upgradeManifest(){
+      try{
+        if(location.protocol==="file:") return;   // لا فائدة من البيان مع ملف محلي
+        const mf={ name:"نظام الجزيرة الميداني", short_name:"الجزيرة", display:"fullscreen",
+          display_override:["fullscreen","standalone"], orientation:"portrait",
+          background_color:"#0B0B0C", theme_color:"#0B0B0C", scope:"./", start_url:"./" };
+        const url=URL.createObjectURL(new Blob([JSON.stringify(mf)],{type:"application/manifest+json"}));
+        const link=document.querySelector('link[rel="manifest"]')||document.createElement("link");
+        link.rel="manifest"; link.href=url;
+        if(!link.parentNode) document.head.appendChild(link);
+      }catch(e){}
+    })();
+
     const daysAgo = s=>s?Math.round((Date.now()-new Date(s).getTime())/86400000):9999;
     const mapsUrl = (lat,lng)=>`https://www.google.com/maps?q=${lat},${lng}`;
     const toArr = v=>Array.isArray(v)?v:(v?(()=>{try{const x=JSON.parse(v);return Array.isArray(x)?x:[];}catch(e){return [];}})():[]);
@@ -1270,6 +1346,8 @@ const DEFAULT_CATALOG = [
         wifiOff:<g><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 8.8a16 16 0 0 1 4.5-2.7"/><path d="M22 8.8a16 16 0 0 0-6.9-3.5"/><path d="M5 12.9a11 11 0 0 1 3-1.9"/><path d="M19 12.9a11 11 0 0 0-3.6-2"/><path d="M12 20h.01"/></g>,
         cloud:<path d="M18 18H7a5 5 0 1 1 .7-9.9A6 6 0 0 1 19.5 9 4.5 4.5 0 0 1 18 18z"/>,
         sort:<g><path d="M11 5h10M11 9h7M11 15h10M11 19h7"/><path d="M3 8l3-3 3 3"/><path d="M3 16l3 3 3-3"/></g>,
+        expand:<g><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/></g>,
+        shrink:<g><path d="M3 8h3a2 2 0 0 0 2-2V3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/></g>,
       }[n];
       return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
         strokeLinecap="round" strokeLinejoin="round" className={c} aria-hidden="true" focusable="false">{ic}</svg>;
@@ -5452,6 +5530,13 @@ create policy "del"   on showroom_customers for delete using (true);`;
     function TopBar({ tab, gq, setGq, results, go, onMenu, onQuick, onPalette, dark, setDark,
                      notifs, notifOpen, setNotifOpen, unseen, onAck, notifOn, onEnableNotif, pushPhone }){
       const [profileOpen,setProfileOpen]=useState(false);
+      const [fs,setFs]=useState(()=>isFullscreen());
+      useEffect(()=>{
+        const h=()=>setFs(isFullscreen());
+        document.addEventListener("fullscreenchange",h);
+        document.addEventListener("webkitfullscreenchange",h);
+        return ()=>{ document.removeEventListener("fullscreenchange",h); document.removeEventListener("webkitfullscreenchange",h); };
+      },[]);
       const wrap=useRef(null);
       useEffect(()=>{
         if(!profileOpen) return;
@@ -5500,7 +5585,7 @@ create policy "del"   on showroom_customers for delete using (true);`;
                 )}
               </button>
               {notifOpen && (
-                <div className="card card-raised absolute top-full left-0 mt-2 w-[330px] max-w-[calc(100vw-24px)] overflow-hidden z-40 pop">
+                <div className="notif-pop card card-raised absolute top-full left-0 mt-2 w-[330px] max-w-[calc(100vw-24px)] overflow-hidden z-40 pop">
                   <div className="px-3.5 py-2.5 flex items-center justify-between" style={{borderBottom:"1px solid var(--line)"}}>
                     <span className="t-xs font-semibold">الإشعارات</span>
                     <span className="chip tnum" style={{background:"var(--surface-2)",color:"var(--ink-2)"}}>{notifs.length}</span>
@@ -5510,7 +5595,7 @@ create policy "del"   on showroom_customers for delete using (true);`;
                       <button onClick={onEnableNotif} className="btn btn-primary btn-sm btn-block">
                         <Icon n="bell" s={13}/> تفعيل تنبيهات الجوال</button>
                     </div>)}
-                  <div className="max-h-[min(380px,60vh)] overflow-y-auto">
+                  <div className="notif-list max-h-[min(380px,60vh)] overflow-y-auto">
                     {notifs.length===0 ? (
                       <div className="px-4 py-10 text-center">
                         <Icon n="check" s={20} c="txt-dim"/>
@@ -5533,6 +5618,14 @@ create policy "del"   on showroom_customers for delete using (true);`;
                 </div>
               )}
             </div>
+
+            {/* ملء الشاشة — يخفي شريط كروم على الجوال */}
+            {fsSupported() && (
+              <button onClick={()=>{ if(isFullscreen()) leaveFullscreen(); else enterFullscreen(); }}
+                title={fs?"الخروج من ملء الشاشة":"ملء الشاشة"}
+                aria-label={fs?"الخروج من ملء الشاشة":"ملء الشاشة"}
+                className="btn-icon tap lg:hidden"><Icon n={fs?"shrink":"expand"} s={17}/></button>
+            )}
 
             <button onClick={()=>setDark(!dark)} aria-label={dark?"التبديل إلى الوضع النهاري":"التبديل إلى الوضع الليلي"}
               className="btn-icon tap"><Icon n={dark?"sun":"moon"} s={17}/></button>
@@ -5822,6 +5915,55 @@ create policy "del"   on showroom_customers for delete using (true);`;
       const [rail,setRail]=useState(()=>{ try{ return localStorage.getItem("jz_rail")==="1"; }catch(e){ return false; } });
       useEffect(()=>{ try{ localStorage.setItem("jz_rail", rail?"1":"0"); }catch(e){} },[rail]);
       useEffect(()=>{ pushRecent(tab); },[tab]);
+
+      /* ═══════════ زر الرجوع في الجوال ═══════════
+         الضغط على "رجوع" كان يخرج من الصفحة كليًّا. الآن يُستهلك أولًا في إغلاق
+         أي نافذة/قائمة مفتوحة، ثم الرجوع للشاشة السابقة داخل النظام، ولا يُغلق
+         التطبيق إلا بضغطتين متتاليتين خلال ثانيتين. */
+      const navStack=useRef([]);
+      const backRef=useRef({});
+      backRef.current={ tab, sub, notifOpen, sideOpen, paletteOpen, quickOpen,
+                        setTab, setSub, setNotifOpen, setSideOpen, setPaletteOpen, setQuickOpen };
+      useEffect(()=>{
+        let exiting=false, lastAsk=0;
+        const arm=()=>{ try{ history.pushState({jz:1},""); }catch(e){} };
+        try{ history.replaceState({jz:0},""); }catch(e){}
+        arm();
+
+        const closeTopLayer=()=>{
+          const s=backRef.current;
+          /* أي نافذة أو ورقة مفتوحة تُغلق كما لو ضُغط Esc */
+          if(document.querySelector(".sheet-shell, .overlay")){
+            try{ document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})); }catch(e){}
+            return true;
+          }
+          if(s.paletteOpen){ s.setPaletteOpen(false); return true; }
+          if(s.quickOpen){ s.setQuickOpen(false); return true; }
+          if(s.notifOpen){ s.setNotifOpen(false); return true; }
+          if(s.sideOpen){ s.setSideOpen(false); return true; }
+          /* قائمة الحساب المنسدلة تُغلق بمحاكاة نقرة خارجها */
+          if(document.querySelector("header .card-raised")){
+            try{ document.dispatchEvent(new MouseEvent("mousedown",{bubbles:true})); }catch(e){}
+            return true;
+          }
+          return false;
+        };
+
+        const onPop=()=>{
+          if(exiting) return;
+          if(closeTopLayer()){ arm(); return; }
+          const s=backRef.current;
+          const prev=navStack.current.pop();
+          if(prev){ s.setTab(prev.tab); s.setSub(prev.sub); window.scrollTo(0,0); arm(); return; }
+          if(s.tab!=="dashboard"){ s.setTab("dashboard"); s.setSub(null); window.scrollTo(0,0); arm(); return; }
+          const now=Date.now();
+          if(now-lastAsk<2200){ exiting=true; setTimeout(()=>{ try{ history.back(); }catch(e){} },0); return; }
+          lastAsk=now; toast("اضغط رجوع مرة أخرى للخروج","info"); arm();
+        };
+        window.addEventListener("popstate",onPop);
+        return ()=>window.removeEventListener("popstate",onPop);
+      },[]);
+
       /* اختصار لوحة الأوامر */
       useEffect(()=>{
         const h=e=>{ if((e.ctrlKey||e.metaKey) && String(e.key).toLowerCase()==="k"){ e.preventDefault(); setPaletteOpen(o=>!o); } };
@@ -5895,6 +6037,10 @@ create policy "del"   on showroom_customers for delete using (true);`;
       /* أي وجهة قديمة تُفكّ تلقائيًا إلى شاشتها وتبويبها الفرعي */
       const go=(id,pre)=>{
         const r=resolveRoute(id);
+        if(r.tab!==tab || r.sub!==sub){
+          navStack.current.push({tab,sub});
+          if(navStack.current.length>25) navStack.current.shift();
+        }
         setTab(r.tab); setSub(r.sub);
         setSideOpen(false); setNotifOpen(false); setGq(""); setResults([]);
         if(pre) setPrefill({tab:id,data:pre});
