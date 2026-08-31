@@ -229,6 +229,7 @@
 
   /* ════════════════ الأسطح ════════════════ */
   .card{
+    container-type:inline-size;
     background:var(--surface);
     border:1px solid var(--line);
     border-radius:var(--r-5);
@@ -554,6 +555,14 @@
   #boot .b-bar i{ display:block; width:40%; height:100%; border-radius:99px; background:var(--accent);
     animation:bootSlide 1.1s var(--ease) infinite; }
   @keyframes bootSlide{ 0%{ transform:translateX(150%) } 100%{ transform:translateX(-320%) } }
+
+  /* المؤشّر يتكيّف مع عرض حاويته هو، لا مع عرض الشاشة:
+     نفس البطاقة تظهر في شبكة رباعية وفي شبكة ثنائية، والسطر السفلي كان يتزاحم. */
+  .kpi-foot{ display:flex; align-items:flex-end; justify-content:space-between; gap:8px; min-height:18px; }
+  @container (max-width: 210px){
+    .kpi-foot{ flex-direction:column; align-items:flex-start; gap:4px; }
+    .kpi-foot .kpi-spark{ display:none; }
+  }
 
   /* ════════════════ حارس أدوات العرض ════════════════
      أدوات Tailwind للعرض (hidden / lg:hidden / sm:flex) لها نفس وزن الأولوية
@@ -1683,11 +1692,11 @@ const DEFAULT_CATALOG = [
           <div className="kpi-v font-semibold leading-none" style={{fontSize:"var(--t-kpi)",color:tone||"var(--ink)"}}>
             <AnimatedNumber value={value}/>
           </div>
-          <div className="flex items-end justify-between gap-2 mt-2 min-h-[18px]">
+          <div className="kpi-foot mt-2">
             {sub ? <span className="t-chip txt-dim truncate min-w-0">{sub}</span> : <span/>}
             <span className="flex items-center gap-2 shrink-0">
               <Trend value={trend}/>
-              {spark ? <Sparkline points={spark} color={c}/> : null}
+              {spark ? <span className="kpi-spark flex"><Sparkline points={spark} color={c}/></span> : null}
             </span>
           </div>
         </Tag>);
@@ -1988,6 +1997,57 @@ const DEFAULT_CATALOG = [
     function fmtDateTime(ts){ if(!ts) return "—"; const d=new Date(ts); if(isNaN(d.getTime())) return String(ts);
       return d.toLocaleDateString("ar-SA",{day:"2-digit",month:"2-digit",year:"numeric"})+" · "+d.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}); }
     function fmtTime(ts){ if(!ts) return "—"; const d=new Date(ts); if(isNaN(d.getTime())) return "—"; return d.toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}); }
+
+    /* «آخر ما دار بينكما» — أول ما يحتاجه المندوب وهو واقف أمام الدهان.
+       كان مدفونًا أسفل الصفحة داخل سجل التفاعلات، فيبدأ كل لقاء من الصفر. */
+    function LastTouch({ name, refreshKey }){
+      const [x,setX]=useState(undefined);
+      useEffect(()=>{ let dead=false;
+        (async()=>{
+          const { data } = await db.from("interactions").select("*").eq("painter",name)
+            .order("date",{ascending:false}).limit(1);
+          if(!dead) setX((data&&data[0])||null);
+        })();
+        return ()=>{ dead=true; };
+      },[name,refreshKey]);
+
+      if(x===undefined) return <div className="card p-4"><div className="sk h-3 w-40 mb-2"/><div className="sk h-3 w-full"/></div>;
+
+      const col = x ? STATUS_COLORS[x.type] : "var(--ink-3)";
+      const gap = x ? daysAgo(x.date) : null;
+      /* أكثر من أسبوعين بلا تواصل إشارة برود تستحق التنبيه */
+      const cold = gap!=null && gap>14;
+
+      return (
+        <section className="card p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h3 className="eyebrow">آخر ما دار بينكما</h3>
+            {x && <span className="t-chip tnum" style={{color:cold?"var(--warn)":"var(--ink-3)"}}>
+              {gap===0?"اليوم":gap===1?"أمس":`قبل ${gap} يومًا`}</span>}
+          </div>
+          {x ? (
+            <div className="flex items-start gap-3">
+              <span className="w-8 h-8 rounded-[8px] flex items-center justify-center shrink-0"
+                style={{color:col,background:`color-mix(in srgb, ${col} 12%, transparent)`}}>
+                <Icon n={INTERACTION_ICON[x.type]||"bolt"} s={15}/>
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="t-2xs font-medium">{x.type}</span>
+                  <span className="t-chip txt-dim tnum">{x.date}</span>
+                  {x.quote_amount?<span className="chip tnum" style={{color:"var(--accent)",background:"var(--accent-soft)",borderColor:"var(--accent-line)"}}>
+                    {Number(x.quote_amount).toLocaleString("en-US")} ريال</span>:null}
+                </div>
+                <p className="t-2xs mt-1.5 leading-relaxed">{x.notes||<span className="txt-dim">بلا ملاحظة مسجّلة — سجّل ما اتفقتما عليه حتى لا تبدأ المرة القادمة من الصفر.</span>}</p>
+                {cold && <p className="t-chip mt-2" style={{color:"var(--warn)"}}>مرّ أكثر من أسبوعين — يستحق تواصلًا.</p>}
+              </div>
+            </div>
+          ) : (
+            <p className="t-2xs txt-dim">ما سُجّل أي تفاعل مع هذا الدهان بعد. أول مكالمة أو رسالة تُسجّل هنا وتصير مرجعك في اللقاء القادم.</p>
+          )}
+        </section>
+      );
+    }
 
     /* ===== لوحة العلاقات داخل التفاصيل ===== */
     function RelatedPanel({ cfg, record, onGo }) {
@@ -2317,6 +2377,8 @@ const DEFAULT_CATALOG = [
                   </div>)}
               </div>
 
+              {cfg.table==="painters" && <LastTouch name={selected.name} refreshKey={interactionsKey}/>}
+
               <section className="card p-4 sm:p-5">
                 <h3 className="t-sm font-semibold mb-4">العلاقات والنشاط المرتبط</h3>
                 <RelatedPanel cfg={cfg} record={selected} onGo={onGo}/>
@@ -2579,11 +2641,20 @@ const DEFAULT_CATALOG = [
       if(!d) return <div className={"text-center py-10 t-sm "+cMuted}>جاري تجهيز المهام...</div>;
       const today=TODAY();
       const tasks=[];
-      const push=(tbl,r,label)=>{ if(r.next_followup && r.followup_status!=="تمت" && r.followup_status!=="ملغاة") tasks.push({tbl,id:r.id,name:r.name,date:r.next_followup,city:r.city,prio:r.priority,label}); };
+      const push=(tbl,r,label)=>{ if(r.next_followup && r.followup_status!=="تمت" && r.followup_status!=="ملغاة") tasks.push({tbl,id:r.id,name:r.name,phone:r.phone,date:r.next_followup,city:r.city,prio:r.priority,label}); };
       d.painters.forEach(r=>push("painters",r,"دهان")); d.projects.forEach(r=>push("projects",r,"موقع")); d.contractors.forEach(r=>push("contractors",r,"مطور عقاري"));
       const overdue=tasks.filter(t=>t.date<today).sort((a,b)=>a.date.localeCompare(b.date));
       const dueToday=tasks.filter(t=>t.date===today);
       const upcoming=tasks.filter(t=>t.date>today).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,20);
+      /* التأجيل هنا كما في شاشة اليوم — نفس المسار الذي يعمل بلا إنترنت */
+      async function snoozeTask(t, days){
+        const d=new Date(); d.setDate(d.getDate()+days);
+        const nd=d.toISOString().slice(0,10);
+        const r=await softUpdateById(t.tbl, t.id, { next_followup:nd, followup_status:"مجدولة" });
+        if(!r.ok){ toast("تعذّر التأجيل","err"); return; }
+        setD(prev=> prev ? { ...prev, [t.tbl]: prev[t.tbl].map(x=> x.id===t.id ? { ...x, next_followup:nd, followup_status:"مجدولة" } : x) } : prev);
+        toast("أُجّلت متابعة "+t.name+" إلى "+nd,"info");
+      }
       async function done(t){
         const r = await softUpdateById(t.tbl, t.id, { followup_status:"تمت", last_contact:today, next_followup:null });
         if(!r.ok){ toast("تعذّر تحديث المتابعة: "+(r.error&&r.error.message||""),"err"); return; }
@@ -2605,8 +2676,12 @@ const DEFAULT_CATALOG = [
                 <div className="t-2xs font-medium truncate">{t.name}</div>
                 <div className="t-chip txt-dim truncate mt-0.5">{t.label} · {t.city||"—"} · <span className="tnum">{t.date}</span></div>
               </button>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {t.prio&&t.prio!=="بدون"?<Pill text={t.prio} color={PRIORITY_COLORS[t.prio]}/>:null}
+                {t.phone&&<a href={"tel:"+t.phone} title="اتصال" aria-label={"اتصال بـ"+t.name}
+                  className="tap w-8 h-8 rounded-[7px] flex items-center justify-center"
+                  style={{color:"var(--ink-2)",background:"var(--surface-2)"}}><Icon n="target" s={14}/></a>}
+                <SnoozeMenu compact onSnooze={days=>snoozeTask(t,days)}/>
                 <button onClick={()=>done(t)} title="تمّت المتابعة" aria-label={"وضع علامة تمّت على متابعة "+t.name}
                   className="tap w-8 h-8 rounded-[7px] flex items-center justify-center transition-colors"
                   style={{color:"var(--ok)",background:"var(--ok-soft)"}}><Icon n="check" s={15}/></button>
@@ -2649,13 +2724,16 @@ const DEFAULT_CATALOG = [
     }
 
     /* ===== اللوحة الرئيسية ===== */
-    function Dashboard({ onGo }) {
-      const [d,setD]=useState(null);
-      useEffect(()=>{(async()=>{
-        const [p,pr,c,v,t,i]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*"),db.from("interactions").select("*")]);
-        setD({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[],interactions:i.data||[]});
-      })()},[]);
-      if(!d) return <div className={"text-center py-10 t-sm "+cMuted}>جاري تحميل اللوحة...</div>;
+    function Dashboard({ onGo, preloaded }) {
+      const [d,setD]=useState(preloaded||null);
+      useEffect(()=>{
+        if(preloaded){ setD(preloaded); return; }
+        (async()=>{
+          const [p,pr,c,v,t,i]=await Promise.all([db.from("painters").select("*"),db.from("projects").select("*"),db.from("contractors").select("*"),db.from("visits").select("*"),db.from("trainings").select("*"),db.from("interactions").select("*")]);
+          setD({painters:p.data||[],projects:pr.data||[],contractors:c.data||[],visits:v.data||[],trainings:t.data||[],interactions:i.data||[]});
+        })();
+      },[preloaded]);
+      if(!d) return <ReportSkeleton/>;
       const {painters,projects,contractors,visits,trainings,interactions}=d;
       const group=(arr,key)=>{const m={};arr.forEach(x=>{const k=x[key]||"غير محدد";m[k]=(m[k]||0)+1;});return Object.entries(m).map(([label,value])=>({label,value}));};
       const sortTop=(arr,n=6)=>arr.sort((a,b)=>b.value-a.value).slice(0,n);
@@ -2719,11 +2797,6 @@ const DEFAULT_CATALOG = [
 
       return (
         <div className="space-y-5">
-          <PageHeader title="اللوحة الرئيسية"
-            lede={`صورة الميدان اليوم — ${new Date().toLocaleDateString("ar-SA",{weekday:"long",day:"numeric",month:"long"})}`}
-            actions={<button onClick={()=>onGo&&onGo("tasks")} className="btn btn-ghost btn-sm">
-              <Icon n="check" s={13}/> مهام اليوم</button>}/>
-
           {/* الصف الأول: حجم القاعدة — الأرقام التي لا تتغيّر كل يوم */}
           <section>
             <div className="flex items-baseline justify-between gap-3 mb-2.5">
@@ -2866,6 +2939,450 @@ const DEFAULT_CATALOG = [
       );
     }
 
+    /* ═══════════ خريطة الحصة بالمدن ═══════════
+       السؤال المركزي للشركة ليس «كم نسبتنا إجمالًا» بل «أين نكسب وأين نخسر».
+       الحلقة الواحدة لا تجيب على ذلك؛ صفّ لكل مدينة يجيب عليه في نظرة:
+       الأحمر لنا، والرمادي لهم، والمدن مرتّبة من الأضعف إلى الأقوى
+       لأن الأضعف هي التي تستحق زيارة الأسبوع القادم. */
+    function CityShareMap({ rows, onPick, selected }){
+      if(!rows.length) return <div className="t-2xs txt-dim py-6 text-center">لا رصدات كافية لحساب الحصة بالمدن بعد.</div>;
+      const own=companyColor(OWN_COMPANY);
+      /* الأحمر الفاتح في الوضع الليلي يجعل النص الأبيض تحت ٣:١ — فيُقلب الحبر بدل اللون */
+      const onOwn = THEME==="dark" ? "#131315" : "#FFFFFF";
+      const avg=Math.round(rows.reduce((a,r)=>a+r.share,0)/rows.length);
+      return (
+        <div>
+          <div className="space-y-1">
+            {rows.map(r=>{
+              const on_=selected===r.city;
+              const weak=r.share<avg;
+              return (
+                <button key={r.city} onClick={()=>onPick&&onPick(on_?"كل المدن":r.city)}
+                  aria-pressed={on_}
+                  className="w-full flex items-center gap-3 py-2 px-2 -mx-2 rounded-[7px] text-right row-hover transition-colors"
+                  style={on_?{background:"var(--surface-2)"}:undefined}>
+                  <span className="t-2xs w-20 sm:w-24 shrink-0 truncate" style={{fontWeight:on_?600:450}}>{r.city}</span>
+
+                  {/* الشريط: نحن ثم هم، بلا فواصل — النسبة تُقرأ من المساحة مباشرة */}
+                  <span className="flex-1 h-6 rounded-[5px] overflow-hidden flex min-w-0" style={{background:"var(--surface-2)"}}>
+                    <span className="h-full flex items-center justify-end px-1.5 transition-all"
+                      style={{width:r.share+"%",background:own}}>
+                      {r.share>=16 && <span className="t-chip tnum" style={{color:onOwn,fontWeight:600}}>{r.share}%</span>}
+                    </span>
+                    <span className="h-full flex-1" style={{background:"var(--surface-3)"}}/>
+                  </span>
+
+                  <span className="t-chip tnum shrink-0 w-16 text-left"
+                    style={{color:weak?"var(--warn)":"var(--ink-3)"}}>
+                    {r.share<16?r.share+"% · ":""}{r.tot} رصدة
+                  </span>
+                </button>);
+            })}
+          </div>
+
+          {/* خط المتوسط كمرجع — يحوّل الأرقام إلى حكم: فوق أو تحت */}
+          <div className="flex items-center gap-3 mt-4 pt-3 t-chip txt-dim" style={{borderTop:"1px solid var(--line)"}}>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-[2px]" style={{background:own}}/> الجزيرة
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-[2px]" style={{background:"var(--surface-3)"}}/> المنافسون
+            </span>
+            <span className="mr-auto tnum">متوسط حصّتك عبر المدن {avg}%</span>
+          </div>
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       شاشة «اليوم»
+       ───────────────────────────────────────────────────────────────────
+       المندوب الساعة الثامنة صباحًا لا يسأل «كم دهانًا عندنا؟» — يسأل
+       «وين أروح، ومين لازم أكلّمه، وإيش تأخّر عليّ». فالشاشة تفتح على العمل،
+       والأرقام الإجمالية نزلت تحت في قسم «الأداء» لأنها سؤال المدير لا المندوب.
+       ═══════════════════════════════════════════════════════════════════ */
+
+    const addDays=(n)=>{ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+    const weekAgo=(n)=>{ const d=new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); };
+
+    /* تأجيل المتابعة — أكثر إجراء يتكرّر في الميدان، ولم يكن له زر.
+       بدونه يضطر المندوب إما لتعليم المهمة «تمت» كذبًا أو تركها متأخرة للأبد. */
+    function SnoozeMenu({ onSnooze, compact }){
+      const [open,setOpen]=useState(false);
+      const ref=useRef(null);
+      useEffect(()=>{ if(!open) return;
+        const h=e=>{ if(ref.current&&!ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener("mousedown",h); return ()=>document.removeEventListener("mousedown",h);
+      },[open]);
+      const opts=[["غدًا",1],["بعد ٣ أيام",3],["بعد أسبوع",7],["بعد أسبوعين",14]];
+      return (
+        <span className="relative" ref={ref}>
+          <button onClick={()=>setOpen(o=>!o)} aria-haspopup="menu" aria-expanded={open}
+            title="تأجيل المتابعة" aria-label="تأجيل المتابعة"
+            className={"tap flex items-center justify-center rounded-[7px] transition-colors "+(compact?"w-8 h-8":"btn btn-ghost btn-sm")}
+            style={compact?{color:"var(--ink-2)",background:"var(--surface-2)"}:undefined}>
+            <Icon n="clock" s={compact?15:13}/>{!compact&&<span>تأجيل</span>}
+          </button>
+          {open&&(
+            <div role="menu" className="card card-raised absolute z-40 top-full left-0 mt-1.5 w-40 overflow-hidden pop">
+              {opts.map(([label,d])=>(
+                <button key={d} role="menuitem" onClick={()=>{ setOpen(false); onSnooze(d); }}
+                  className="w-full px-3.5 py-2.5 text-right t-2xs row-hover flex items-center justify-between">
+                  <span>{label}</span><span className="t-chip txt-dim tnum">{addDays(d).slice(5)}</span>
+                </button>))}
+            </div>)}
+        </span>
+      );
+    }
+
+    /* وضع الاتصال المتتابع — للمندوب وهو في السيارة:
+       اسم واحد بملء الشاشة، اتصال أو واتساب، ثم النتيجة بضغطة وينتقل تلقائيًا. */
+    function CallMode({ open, tasks, onClose, onDone, onSnooze }){
+      const ref=useModalBehaviour(open, onClose);
+      const [i,setI]=useState(0);
+      const [log,setLog]=useState([]);
+      useEffect(()=>{ if(open){ setI(0); setLog([]); } },[open]);
+      if(!open) return null;
+      const list=tasks.filter(t=>t.phone);
+      const t=list[i];
+      const advance=(outcome)=>{ setLog(l=>[...l,outcome]); setI(x=>x+1); };
+
+      if(!t){
+        return (
+          <div className="sheet-shell" onMouseDown={e=>{ if(e.target===e.currentTarget) onClose(); }}>
+            <div dir="rtl" ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label="انتهت الجولة"
+              className="sheet-body flex flex-col items-center justify-center text-center gap-4" style={{maxWidth:460}}>
+              <span className="w-14 h-14 rounded-[12px] flex items-center justify-center"
+                style={{background:"var(--ok-soft)",color:"var(--ok)"}}><Icon n="check" s={26}/></span>
+              <h2 className="t-xl">{list.length?"خلّصت الجولة":"ما فيه أرقام للاتصال"}</h2>
+              <p className="t-2xs txt-muted max-w-xs">
+                {list.length
+                  ? `${log.filter(x=>x==="done").length} تواصل ناجح · ${log.filter(x=>x==="snooze").length} مؤجّل · ${log.filter(x=>x==="skip").length} لم يردّ`
+                  : "المتابعات المستحقّة اليوم ما فيها أرقام جوال مسجّلة."}
+              </p>
+              <button onClick={onClose} className="btn btn-primary btn-lg mt-2">إغلاق</button>
+            </div>
+          </div>);
+      }
+
+      const wa=waLink(t.phone);
+      return (
+        <div className="sheet-shell" onMouseDown={e=>{ if(e.target===e.currentTarget) onClose(); }}>
+          <div dir="rtl" ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label="وضع الاتصال"
+            className="sheet-body flex flex-col" style={{maxWidth:460}}>
+
+            <div className="flex items-center justify-between gap-3 mb-6">
+              <span className="t-2xs txt-dim tnum">{i+1} من {list.length}</span>
+              <button onClick={onClose} aria-label="إنهاء الجولة" className="btn-icon tap"><Icon n="close" s={17}/></button>
+            </div>
+
+            {/* شريط التقدّم */}
+            <div className="h-1 rounded-full overflow-hidden mb-8" style={{background:"var(--surface-2)"}}>
+              <div className="h-full rounded-full transition-all" style={{width:(i/list.length*100)+"%",background:"var(--accent)"}}/>
+            </div>
+
+            <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 py-4">
+              <Avatar text={t.name} size={64}/>
+              <h2 className="t-2xl mt-2">{t.name}</h2>
+              <p className="t-2xs txt-muted">{t.label} · {t.city||"—"}</p>
+              {t.prio&&t.prio!=="بدون"?<Pill text={"أولوية "+t.prio} color={PRIORITY_COLORS[t.prio]}/>:null}
+              <p className="t-chip txt-dim tnum mt-1">
+                {t.overdue ? `متأخرة منذ ${daysAgo(t.date)} يوم` : "مستحقّة اليوم"}
+              </p>
+              {t.lastNote && (
+                <div className="inset p-3 mt-3 w-full text-right">
+                  <div className="eyebrow mb-1.5">آخر ما دار بينكما</div>
+                  <p className="t-2xs">{t.lastNote}</p>
+                </div>)}
+            </div>
+
+            {/* الاتصال */}
+            <div className="grid grid-cols-2 gap-2 mt-6">
+              <a href={"tel:"+t.phone} className="btn btn-primary btn-lg tap justify-center"><Icon n="target" s={16}/> اتصال</a>
+              {wa
+                ? <a href={wa} target="_blank" rel="noopener noreferrer" className="btn btn-lg tap justify-center"
+                    style={{background:"var(--ok)",color:THEME==="dark"?"#0B0B0C":"#fff",borderColor:"var(--ok)"}}><Icon n="whatsapp" s={16}/> واتساب</a>
+                : <span className="btn btn-ghost btn-lg justify-center opacity-50">لا يوجد واتساب</span>}
+            </div>
+
+            {/* النتيجة */}
+            <div className="mt-3 pt-3" style={{borderTop:"1px solid var(--line)"}}>
+              <div className="eyebrow mb-2.5">سجّل النتيجة وانتقل</div>
+              <div className="grid grid-cols-3 gap-2">
+                <button onClick={()=>{ onDone(t); advance("done"); }} className="btn btn-outline tap flex-col gap-1 py-3 h-auto">
+                  <Icon n="check" s={16}/><span className="t-chip">تمّت</span></button>
+                <button onClick={()=>{ onSnooze(t,3); advance("snooze"); }} className="btn btn-outline tap flex-col gap-1 py-3 h-auto">
+                  <Icon n="clock" s={16}/><span className="t-chip">أجّل ٣ أيام</span></button>
+                <button onClick={()=>advance("skip")} className="btn btn-outline tap flex-col gap-1 py-3 h-auto">
+                  <Icon n="chevron" s={16}/><span className="t-chip">لم يردّ</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function TodayPage({ onGo }){
+      const [d,setD]=useState(null);
+      const [callOpen,setCallOpen]=useState(false);
+      const [busy,setBusy]=useState(null);
+
+      async function load(){
+        const [p,pr,c,v,t,i,sr]=await Promise.all([
+          db.from("painters").select("*"), db.from("projects").select("*"),
+          db.from("contractors").select("*"), db.from("visits").select("*"),
+          db.from("trainings").select("*"), db.from("interactions").select("*"),
+          db.from(SR_TABLE).select("*"),
+        ]);
+        setD({ painters:p.data||[], projects:pr.data||[], contractors:c.data||[],
+               visits:v.data||[], trainings:t.data||[], interactions:i.data||[], showroom:sr.data||[] });
+      }
+      useEffect(()=>{ load(); },[]);
+      if(!d) return <ReportSkeleton/>;
+
+      const today=TODAY();
+      const { painters, projects, contractors, visits, interactions, showroom } = d;
+
+      /* آخر ملاحظة لكل جهة — تُعرض عند الاتصال حتى لا يبدأ المندوب من الصفر */
+      const lastNoteBy={};
+      [...interactions].sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")))
+        .forEach(x=>{ if(x.painter&&x.notes) lastNoteBy[x.painter]=x.notes; });
+
+      /* المتابعات المستحقّة */
+      const tasks=[];
+      const push=(tbl,label,r)=>{
+        if(!r.next_followup || r.followup_status==="تمت" || r.followup_status==="ملغاة") return;
+        if(r.next_followup>today) return;
+        tasks.push({ tbl, label, id:r.id, name:r.name, phone:r.phone, city:r.city,
+          prio:r.priority, date:r.next_followup, overdue:r.next_followup<today,
+          lastNote:lastNoteBy[r.name]||"" });
+      };
+      painters.forEach(r=>push("painters","دهان",r));
+      projects.forEach(r=>push("projects","موقع",r));
+      contractors.forEach(r=>push("contractors","مطوّر",r));
+      const prioRank={"عالية":0,"متوسطة":1,"منخفضة":2,"بدون":3};
+      tasks.sort((a,b)=> (b.overdue-a.overdue) || ((prioRank[a.prio]??3)-(prioRank[b.prio]??3)) || String(a.date).localeCompare(String(b.date)));
+      const overdue=tasks.filter(t=>t.overdue);
+      const dueToday=tasks.filter(t=>!t.overdue);
+
+      /* عملاء المعرض الأقرب للإغلاق */
+      const hot=(showroom||[])
+        .filter(c=>SR_OPEN_STAGES.includes(c.stage))
+        .map(c=>({ c, s:srScore(c) }))
+        .sort((a,b)=>b.s.score-a.s.score).slice(0,4);
+
+      /* مدينة اليوم من الخطة الأسبوعية */
+      let planCity=null, tomorrowCity=null;
+      try{ const plan=JSON.parse(localStorage.getItem(PLAN_KEY)||"{}");
+        planCity=plan[today]||null; tomorrowCity=plan[addDays(1)]||null; }catch(e){}
+
+      /* الزخم: هذا الأسبوع مقابل الماضي — دافع ذاتي بلا ضغط إداري */
+      const inRange=(dt,from,to)=> dt && dt>=from && dt<=to;
+      const wStart=weekAgo(6), pStart=weekAgo(13), pEnd=weekAgo(7);
+      const thisWeekVisits=visits.filter(v=>inRange(v.date,wStart,today)).length;
+      const lastWeekVisits=visits.filter(v=>inRange(v.date,pStart,pEnd)).length;
+      const thisWeekInter=interactions.filter(x=>inRange(x.date,wStart,today)).length;
+      const lastWeekInter=interactions.filter(x=>inRange(x.date,pStart,pEnd)).length;
+      const delta=(a,b)=> b===0 ? (a>0?100:0) : Math.round((a-b)/b*100);
+      const daySeries=Array.from({length:7},(_,k)=>{
+        const day=weekAgo(6-k);
+        return { label:new Date(day+"T00:00:00").toLocaleDateString("ar-SA",{weekday:"narrow"}),
+                 value:visits.filter(v=>v.date===day).length };
+      });
+
+      /* الإجراءات */
+      async function markDone(t){
+        setBusy(t.tbl+t.id);
+        const r=await softUpdateById(t.tbl,t.id,{ followup_status:"تمت", last_contact:today, next_followup:null });
+        setBusy(null);
+        if(!r.ok){ toast("تعذّر التحديث","err"); return; }
+        setD(prev=>({ ...prev, [t.tbl]: prev[t.tbl].map(x=>x.id===t.id?{...x,followup_status:"تمت",next_followup:null,last_contact:today}:x) }));
+        logActivity("تعديل",t.tbl,"متابعة",t.name);
+        toast("تمّت متابعة "+t.name,"ok");
+      }
+      async function snooze(t,days){
+        const nd=addDays(days);
+        setBusy(t.tbl+t.id);
+        const r=await softUpdateById(t.tbl,t.id,{ next_followup:nd, followup_status:"مجدولة" });
+        setBusy(null);
+        if(!r.ok){ toast("تعذّر التأجيل","err"); return; }
+        setD(prev=>({ ...prev, [t.tbl]: prev[t.tbl].map(x=>x.id===t.id?{...x,next_followup:nd,followup_status:"مجدولة"}:x) }));
+        toast("أُجّلت متابعة "+t.name+" إلى "+nd,"info");
+      }
+
+      const dateLabel=new Date().toLocaleDateString("ar-SA",{weekday:"long",day:"numeric",month:"long"});
+
+      return (
+        <div className="space-y-5">
+
+          {/* ═══ الترويسة: التاريخ، مدينة اليوم، والفعل الأساسي ═══ */}
+          <section className="card p-5 sm:p-6 relative overflow-hidden">
+            <div className="flex items-start justify-between gap-5 flex-wrap">
+              <div className="min-w-0">
+                <div className="eyebrow">{dateLabel}</div>
+                <h1 className="t-3xl mt-2">
+                  {overdue.length
+                    ? <><span style={{color:"var(--danger)"}} className="tnum">{overdue.length}</span> متابعة متأخرة
+                        {dueToday.length>0 && <span className="txt-muted" style={{fontWeight:400}}> و<span className="tnum">{dueToday.length}</span> مستحقّة اليوم</span>}</>
+                    : dueToday.length
+                      ? <><span className="tnum">{dueToday.length}</span> متابعة مستحقّة اليوم</>
+                      : <>يومك صافٍ من المتابعات</>}
+                </h1>
+                <p className="lede mt-2 max-w-lg">
+                  {planCity
+                    ? <>خطّة اليوم: <b style={{color:"var(--ink)"}}>{planCity}</b>{tomorrowCity?<> · وغدًا {tomorrowCity}</>:null}</>
+                    : <>ما حدّدت مدينة اليوم بعد — <button onClick={()=>onGo&&onGo("plan")} className="tap underline underline-offset-4 py-1 px-0.5 rounded-[4px]" style={{color:"var(--ink)",fontWeight:500}}>حدّدها من الخطة الأسبوعية</button>.</>}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap shrink-0">
+                {tasks.some(t=>t.phone) && (
+                  <button onClick={()=>setCallOpen(true)} className="btn btn-outline press tap">
+                    <Icon n="target" s={14}/> ابدأ جولة اتصال
+                  </button>)}
+              </div>
+            </div>
+
+            {/* شريط تغطية مدن جازان — يجعل الفراغ الجغرافي مرئيًا بدل أن يظل رقمًا */}
+            <div className="mt-6 pt-5" style={{borderTop:"1px solid var(--line)"}}>
+              <div className="flex items-baseline justify-between gap-3 mb-3">
+                <span className="eyebrow">تغطية مدن جازان</span>
+                <span className="t-chip txt-dim">آخر ٣٠ يومًا</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {CITIES.map(city=>{
+                  const n=visits.filter(v=>v.location===city && v.date>=weekAgo(30)).length;
+                  const planned=planCity===city;
+                  return (
+                    <button key={city} onClick={()=>onGo&&onGo("plan")}
+                      title={n?`${n} زيارة خلال ٣٠ يومًا`:"لا زيارات خلال ٣٠ يومًا"}
+                      className="chip tap transition-colors"
+                      style={ planned ? {color:"var(--accent)",background:"var(--accent-soft)",borderColor:"var(--accent-line)",fontWeight:600,padding:"5px 10px"}
+                            : n ? {color:"var(--ink-2)",background:"var(--surface-2)",borderColor:"var(--line)",padding:"5px 10px"}
+                                : {color:"var(--ink-3)",background:"transparent",borderColor:"var(--line)",padding:"5px 10px"}}>
+                      {city}{n?<span className="tnum opacity-70"> {n}</span>:null}
+                    </button>);
+                })}
+              </div>
+            </div>
+          </section>
+
+          {/* ═══ الزخم الأسبوعي ═══ */}
+          <section className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+            <Kpi label="زياراتك هذا الأسبوع" value={thisWeekVisits} icon="pin" color="var(--ink-2)"
+              trend={delta(thisWeekVisits,lastWeekVisits)} spark={daySeries.map(x=>x.value)}
+              sub={"الأسبوع الماضي "+lastWeekVisits}/>
+            <Kpi label="تفاعلاتك هذا الأسبوع" value={thisWeekInter} icon="bolt" color="var(--ink-2)"
+              trend={delta(thisWeekInter,lastWeekInter)} sub={"الأسبوع الماضي "+lastWeekInter}/>
+            <Kpi label="متأخرة" value={overdue.length} icon="alert"
+              color={overdue.length?"var(--danger)":"var(--ok)"} tone={overdue.length?"var(--danger)":undefined}
+              sub={overdue.length?"تحتاج تحرّكًا الآن":"لا شيء متأخر"}/>
+            <Kpi label="فرص مفتوحة في المعرض" value={hot.length?(showroom||[]).filter(c=>SR_OPEN_STAGES.includes(c.stage)).length:0}
+              icon="target" color="var(--ink-2)" onClick={()=>onGo&&onGo("showroom")}
+              sub={hot.length?"أقربها "+hot[0].c.name:null}/>
+          </section>
+
+          {/* ═══ يحتاج تحرّكًا الآن ═══ */}
+          <section className="card p-4 sm:p-5">
+            <header className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="t-md font-semibold flex items-center gap-2">
+                يحتاج تحرّكًا الآن
+                <span className="chip tnum" style={tasks.length
+                  ? {color:"var(--danger)",background:"var(--danger-soft)",borderColor:"var(--danger-line)"}
+                  : {color:"var(--ink-3)",background:"var(--surface-2)",borderColor:"var(--line)"}}>{tasks.length}</span>
+              </h2>
+              <button onClick={()=>onGo&&onGo("tasks")} className="btn btn-ghost btn-sm shrink-0">كل المتابعات</button>
+            </header>
+
+            {tasks.length===0 ? (
+              <div className="text-center py-10">
+                <span className="w-12 h-12 rounded-[11px] flex items-center justify-center mx-auto mb-3"
+                  style={{background:"var(--ok-soft)",color:"var(--ok)"}}><Icon n="check" s={22}/></span>
+                <p className="t-sm font-medium">ما فيه متابعة متأخرة أو مستحقّة</p>
+                <p className="t-2xs txt-muted mt-1">وقت جيد لزيارة ميدانية أو لفتح فرصة جديدة.</p>
+              </div>
+            ) : (
+              <div className="divide-hair">
+                {tasks.slice(0,8).map(t=>(
+                  <div key={t.tbl+t.id} className="flex items-center gap-3 py-2.5">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{background:t.overdue?"var(--danger)":"var(--warn)"}}/>
+                    <button onClick={()=>onGo&&onGo(t.tbl)} className="min-w-0 flex-1 text-right rounded-[6px]">
+                      <div className="t-2xs font-medium truncate">{t.name}</div>
+                      <div className="t-chip txt-dim truncate mt-0.5">
+                        {t.label} · {t.city||"—"} ·{" "}
+                        <span className="tnum" style={t.overdue?{color:"var(--danger)"}:undefined}>
+                          {t.overdue?`متأخرة ${daysAgo(t.date)} يوم`:"اليوم"}
+                        </span>
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {t.phone&&<a href={"tel:"+t.phone} aria-label={"اتصال بـ"+t.name} title="اتصال"
+                        className="tap w-8 h-8 rounded-[7px] flex items-center justify-center"
+                        style={{color:"var(--ink-2)",background:"var(--surface-2)"}}><Icon n="target" s={14}/></a>}
+                      {t.phone&&waLink(t.phone)&&<a href={waLink(t.phone)} target="_blank" rel="noopener noreferrer"
+                        aria-label={"واتساب إلى "+t.name} title="واتساب"
+                        className="tap w-8 h-8 rounded-[7px] flex items-center justify-center"
+                        style={{color:"var(--ok)",background:"var(--ok-soft)"}}><Icon n="whatsapp" s={14}/></a>}
+                      <SnoozeMenu compact onSnooze={days=>snooze(t,days)}/>
+                      <button onClick={()=>markDone(t)} disabled={busy===t.tbl+t.id}
+                        aria-label={"تمّت متابعة "+t.name} title="تمّت"
+                        className="tap w-8 h-8 rounded-[7px] flex items-center justify-center disabled:opacity-50"
+                        style={{color:"var(--ok)",background:"var(--ok-soft)"}}>
+                        {busy===t.tbl+t.id?<Icon n="refresh" s={13} c="spin"/>:<Icon n="check" s={15}/>}
+                      </button>
+                    </div>
+                  </div>))}
+                {tasks.length>8 && (
+                  <button onClick={()=>onGo&&onGo("tasks")} className="btn btn-ghost btn-sm btn-block mt-2.5">
+                    و{tasks.length-8} متابعة أخرى</button>)}
+              </div>
+            )}
+          </section>
+
+          {/* ═══ أقرب الفرص للإغلاق ═══ */}
+          {hot.length>0 && (
+            <section className="card p-4 sm:p-5">
+              <header className="flex items-center justify-between gap-3 mb-4">
+                <h2 className="t-md font-semibold">أقرب الفرص للإغلاق</h2>
+                <button onClick={()=>onGo&&onGo("showroom")} className="btn btn-ghost btn-sm shrink-0">الأنبوب</button>
+              </header>
+              <div className="divide-hair">
+                {hot.map(({c,s})=>{
+                  const na=srNextAction(c);
+                  return (
+                    <button key={c.id} onClick={()=>onGo&&onGo("showroom")}
+                      className="w-full flex items-center gap-3 py-2.5 text-right rounded-[6px] row-hover px-1 -mx-1">
+                      <span className="chip tnum shrink-0"
+                        style={{color:SR_TIER_COLORS[s.tier],background:`color-mix(in srgb, ${SR_TIER_COLORS[s.tier]} 12%, transparent)`,
+                                borderColor:`color-mix(in srgb, ${SR_TIER_COLORS[s.tier]} 26%, transparent)`}}>{s.score}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block t-2xs font-medium truncate">{c.name}
+                          <span className="txt-dim font-normal"> · {c.stage}</span></span>
+                        <span className="block t-chip truncate mt-0.5" style={{color:na.c}}>{na.t}</span>
+                      </span>
+                      <span className="t-2xs tnum shrink-0 txt-muted">{srMoney(c.quote_value)} <span className="txt-dim">ريال</span></span>
+                    </button>);
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* ═══ الأداء — الأرقام الإجمالية، بعد العمل لا قبله ═══ */}
+          <section>
+            <div className="flex items-baseline justify-between gap-3 mb-3 pt-2">
+              <h2 className="t-md font-semibold">الأداء</h2>
+              <span className="t-chip txt-dim">صورة عامة عن قاعدتك وحصّتك</span>
+            </div>
+            <Dashboard onGo={onGo} preloaded={d}/>
+          </section>
+
+          <CallMode open={callOpen} tasks={tasks} onClose={()=>setCallOpen(false)}
+            onDone={markDone} onSnooze={snooze}/>
+        </div>
+      );
+    }
+
     /* ===== حساب الحصة السوقية (يقرأ المنتجات المرصودة في المشاريع والزيارات بالتزامن) ===== */
     function computeMarketShare(projects, visits){
       const all=[...(projects||[]),...(visits||[])];
@@ -2968,7 +3485,7 @@ const DEFAULT_CATALOG = [
     function MarketSharePage() {
       const [data,setData]=useState(null); const [famSel,setFamSel]=useState("الكل"); const [citySel,setCitySel]=useState("كل المدن");
       useEffect(()=>{(async()=>{ const [pr,v]=await Promise.all([db.from("projects").select("*"),db.from("visits").select("*")]); setData({projects:pr.data||[],visits:v.data||[]}); })()},[]);
-      if(!data) return <div className={"text-center py-10 t-sm "+cMuted}>جاري حساب الحصة السوقية...</div>;
+      if(!data) return <ReportSkeleton/>;
       const fProjects = citySel==="كل المدن"? data.projects : data.projects.filter(p=>p.city===citySel);
       const fVisits   = citySel==="كل المدن"? data.visits   : data.visits.filter(v=>v.location===citySel);
       const ms=computeMarketShare(fProjects,fVisits);
@@ -2977,6 +3494,15 @@ const DEFAULT_CATALOG = [
       const rank=overallArr.findIndex(x=>x.label===OWN_COMPANY)+1;
       const fams=ms.total===0?[]:CATALOG.filter(f=>famSel==="الكل"||f.family===famSel);
       const Card=({children,cls=""})=>(<div className={"p-4 "+cCard+" "+cls}>{children}</div>);
+      /* الحصة لكل مدينة تُحسب من كامل البيانات لا من المصفّاة، وإلا انهار الجدول عند التصفية */
+      const cityRows=CITIES.map(city=>{
+        const pj=data.projects.filter(p=>p.city===city);
+        const vs=data.visits.filter(v=>v.location===city);
+        const m=computeMarketShare(pj,vs);
+        const own=m.overall[OWN_COMPANY]||0;
+        return { city, tot:m.total, share:m.total?Math.round(own/m.total*100):0 };
+      }).filter(r=>r.tot>0).sort((a,b)=>a.share-b.share||b.tot-a.tot);
+
       const famShare=fam=>{ const m=ms.perFamily[fam.family]||{}; const tot=Object.values(m).reduce((a,b)=>a+b,0);
         const arr=Object.entries(m).map(([label,value])=>({label,value,color:companyColor(label)})).sort((a,b)=>b.value-a.value); return {tot,arr}; };
 
@@ -2994,6 +3520,15 @@ const DEFAULT_CATALOG = [
             { value:ms.total, label:"إجمالي الرصدات" },
           ]}/>
 
+        {/* أين نكسب وأين نخسر — السؤال الأول */}
+        <Card>
+          <div className="flex items-baseline justify-between gap-3 mb-4">
+            <div className="t-sm font-semibold">حصّتنا في كل مدينة</div>
+            <span className="t-chip txt-dim">الأضعف أولًا — وهي وجهة الأسبوع القادم</span>
+          </div>
+          <CityShareMap rows={cityRows} onPick={setCitySel} selected={citySel}/>
+        </Card>
+
         <Card><div className="t-sm font-semibold mb-4">الحصة الإجمالية بين الشركات</div>
           <Donut data={overallArr} centerLabel="رصدة"/></Card>
 
@@ -3003,12 +3538,23 @@ const DEFAULT_CATALOG = [
               <div className="flex justify-between mb-1 t-2xs"><span className="font-bold flex items-center gap-1.5"><span className="w-5 h-5 rounded-[5px] t-chip tnum flex items-center justify-center shrink-0" style={{background:"var(--surface-2)",color:"var(--ink-3)",border:"1px solid var(--line)"}}>{i+1}</span>{c.label}{own?<span className="txt-dim font-normal"> · نحن</span>:null}</span><span className="font-semibold tnum" style={{color:c.color}}>{pct}% · {c.value}</span></div>
               <div className={"h-2.5 rounded-full overflow-hidden "+cTrack}><div className="h-2.5 rounded-full" style={{width:pct+"%",background:c.color}}/></div></div>);})}</div></Card>
 
-        <div><div className={"t-2xs font-bold mb-1.5 "+cMuted}>تصفية حسب المدينة (كل مدينة لها حصتها)</div>
-          <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
-            {["كل المدن",...CITIES].map(c=>(<button key={c} onClick={()=>setCitySel(c)} className={"shrink-0 px-3 py-1.5 rounded-xl t-2xs font-bold "+(citySel===c?cBtn:cTrack+" "+cMuted)}>{c}</button>))}
-          </div></div>
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
-          {["الكل",...CATALOG.map(f=>f.family)].map(f=>(<button key={f} onClick={()=>setFamSel(f)} className={"shrink-0 px-3 py-1.5 rounded-xl t-2xs font-bold "+(famSel===f?cBtn:cTrack+" "+cMuted)}>{f}</button>))}
+        <div className="space-y-2.5 pt-2">
+          <div>
+            <div className="eyebrow mb-2">المدينة</div>
+            <div className="rail">
+              {["كل المدن",...CITIES].map(c=>(
+                <button key={c} onClick={()=>setCitySel(c)} aria-pressed={citySel===c}
+                  className={"btn btn-sm "+(citySel===c?"btn-primary":"btn-ghost")}>{c}</button>))}
+            </div>
+          </div>
+          <div>
+            <div className="eyebrow mb-2">عائلة المنتج</div>
+            <div className="rail">
+              {["الكل",...CATALOG.map(f=>f.family)].map(f=>(
+                <button key={f} onClick={()=>setFamSel(f)} aria-pressed={famSel===f}
+                  className={"btn btn-sm "+(famSel===f?"btn-primary":"btn-ghost")}>{f}</button>))}
+            </div>
+          </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {fams.map(fam=>{ const {tot,arr}=famShare(fam); if(tot===0) return (<Card key={fam.id}><div className="flex items-center gap-2 mb-2"><span className="w-7 h-7 rounded-[7px] flex items-center justify-center" style={{background:famColor(fam)+"18",color:famColor(fam)}}><Icon n={fam.icon} s={15}/></span><div className="t-sm font-semibold">{fam.family}</div></div><div className={"t-2xs py-3 text-center "+cMuted}>لا رصدات بعد</div></Card>);
@@ -4256,7 +4802,7 @@ const DEFAULT_CATALOG = [
                 {link ? (
                   <a href={link} target="_blank" rel="noreferrer"
                     onClick={()=>onPatch(c,{ last_contact:TODAY(), contact_method:"واتساب" })}
-                    className="btn btn-sm flex-1 text-center" style={{background:"var(--ok)",color:"#fff",borderColor:"var(--ok)"}}>
+                    className="btn btn-sm flex-1 text-center" style={{background:"var(--ok)",color:THEME==="dark"?"#0B0B0C":"#fff",borderColor:"var(--ok)"}}>
                     إرسال على واتساب
                   </a>
                 ) : (
@@ -4760,13 +5306,17 @@ create policy "del"   on showroom_customers for delete using (true);`;
        ════════════════════════════════════════════════════════════ */
 
     /* تجميع التبويبات في أقسام منطقية بدل قائمة مسطّحة من ١٥ عنصرًا */
+    /* تجميع التبويبات في أقسام منطقية — تسع وجهات فقط */
     const NAV_GROUPS = [
-      { title:"الرئيسية", items:[["dashboard","اللوحة الرئيسية","home"],["tasks","مهامي اليوم","check"],["plan","الخطة الأسبوعية","clock"]] },
-      { title:"البيع الميداني", items:[["showroom","عملاء المعرض","target"],["painters","الدهانين","brush"],["projects","المواقع","building"],["contractors","المطوّرون العقاريون","layers"],["visits","الزيارات","pin"],["trainings","التدريبات","star"]] },
-      { title:"السوق", items:[["market","رصد السوق","shield"],["products","المنتجات","drop"],["marketshare","الحصة السوقية","trophy"]] },
-      { title:"التحليل", items:[["insights","رؤى ذكية","bolt"],["timeline","سجل النشاط","list"],["reports","التقارير","printer"]] },
+      { title:"يومي", items:[["dashboard","اليوم","home"],["plan","الخطة الأسبوعية","clock"]] },
+      { title:"البيع الميداني", items:[["showroom","عملاء المعرض","target"],["painters","الدهانين","brush"],["projects","المواقع","building"],["contractors","المطوّرون العقاريون","layers"],["field","النشاط الميداني","pin"]] },
+      { title:"السوق والتحليل", items:[["market","السوق","trophy"],["analysis","التحليل","chart"]] },
     ];
-    const NAV_ICON = Object.fromEntries(NAV_GROUPS.flatMap(g=>g.items.map(([k,,ic])=>[k,ic])));
+    const NAV_ICON = Object.fromEntries([
+      ...NAV_GROUPS.flatMap(g=>g.items.map(([k,,ic])=>[k,ic])),
+      ["tasks","check"],["visits","pin"],["trainings","star"],["marketshare","trophy"],
+      ["products","drop"],["insights","bolt"],["timeline","list"],["reports","printer"],
+    ]);
     const RECENT_KEY="jz_recent_tabs", PINS_KEY="jz_pinned_tabs";
 
     function pushRecent(tab){
@@ -5024,7 +5574,7 @@ create policy "del"   on showroom_customers for delete using (true);`;
 
     /* ═══════════ التنقّل السفلي للجوال ═══════════ */
     function BottomNav({ tab, go, onQuick, onMenu }){
-      const items=[["dashboard","الرئيسية","home"],["showroom","المعرض","target"],["__fab","تسجيل زيارة","bolt"],["visits","الزيارات","pin"],["__more","المزيد","menu"]];
+      const items=[["dashboard","اليوم","home"],["painters","الدهانين","brush"],["__fab","تسجيل زيارة","bolt"],["showroom","المعرض","target"],["__more","المزيد","menu"]];
       return (
         <nav className="bottom-nav lg:hidden fixed bottom-0 inset-x-0 z-30 topbar no-print" aria-label="التنقّل السريع">
           <div className="flex items-stretch justify-around px-1 pt-1 pb-1">
@@ -5200,8 +5750,56 @@ create policy "del"   on showroom_customers for delete using (true);`;
     }
 
     /* ===== التطبيق ===== */
-    const NAV=[["dashboard","اللوحة الرئيسية"],["tasks","مهامي اليوم"],["showroom","عملاء المعرض"],["plan","الخطة الأسبوعية"],["painters","الدهانين"],["projects","المواقع"],["contractors","المطوّرون العقاريون"],["visits","الزيارات"],["trainings","التدريبات"],["market","رصد السوق"],["products","المنتجات"],["marketshare","الحصة السوقية"],["insights","رؤى ذكية"],["timeline","سجل النشاط"],["reports","التقارير"]];
+    /* شريط التبويبات الفرعية داخل الشاشات المجمّعة */
+    function SubTabs({ screen, sub, onSub }){
+      const cfg=SCREENS[screen]; if(!cfg) return null;
+      return (
+        <div className="rail mb-5 -mt-1" role="tablist" aria-label={cfg.title}>
+          {cfg.subs.map(([k,label])=>{
+            const on_=sub===k;
+            return (
+              <button key={k} role="tab" aria-selected={on_} onClick={()=>onSub(k)}
+                className="relative px-3.5 py-2 t-2xs whitespace-nowrap transition-colors"
+                style={{color:on_?"var(--ink)":"var(--ink-3)",fontWeight:on_?600:450}}>
+                {label}
+                {on_&&<span className="absolute inset-x-2 -bottom-px h-[2px] rounded-full" style={{background:"var(--accent)"}}/>}
+              </button>);
+          })}
+          <span className="flex-1" style={{borderBottom:"1px solid var(--line)",minWidth:8}}/>
+        </div>
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════
+       التنقّل: تسع وجهات بدل خمس عشرة.
+       لم تُحذف أي شاشة — الشاشات المتقاربة صارت تبويبات داخل وجهة واحدة.
+       كل نداء go("marketshare") القديم لا يزال يعمل عبر جدول المرادفات أدناه.
+       ═══════════════════════════════════════════════════════════════════ */
+    const SCREENS = {
+      market:   { title:"السوق",   subs:[["marketshare","الحصة السوقية"],["market","رصد المنافسين"],["products","الكتالوج"]] },
+      analysis: { title:"التحليل", subs:[["insights","الرؤى"],["reports","التقارير"],["timeline","سجل النشاط"]] },
+      field:    { title:"النشاط الميداني", subs:[["visits","الزيارات"],["trainings","التدريبات"]] },
+    };
+    /* وجهة كل تبويب فرعي ← الشاشة التي تحتويه */
+    const SUB_OF = {};
+    Object.entries(SCREENS).forEach(([k,v])=>v.subs.forEach(([sub])=>{ SUB_OF[sub]=k; }));
+
+    const NAV=[["dashboard","اليوم"],["plan","الخطة الأسبوعية"],["showroom","عملاء المعرض"],
+      ["painters","الدهانين"],["projects","المواقع"],["contractors","المطوّرون العقاريون"],
+      ["field","النشاط الميداني"],["market","السوق"],["analysis","التحليل"],
+      /* عناوين التبويبات الفرعية تبقى معروفة للوحة الأوامر والبحث */
+      ["tasks","المتابعات"],["visits","الزيارات"],["trainings","التدريبات"],
+      ["marketshare","الحصة السوقية"],["products","الكتالوج"],
+      ["insights","الرؤى"],["timeline","سجل النشاط"],["reports","التقارير"]];
     const TITLES=Object.fromEntries(NAV);
+    TITLES.market="السوق";
+
+    /* يفكّ أي وجهة (قديمة أو جديدة) إلى {tab, sub} */
+    function resolveRoute(id){
+      if(SCREENS[id]) return { tab:id, sub:SCREENS[id].subs[0][0] };
+      if(SUB_OF[id])  return { tab:SUB_OF[id], sub:id };
+      return { tab:id, sub:null };
+    }
 
     /* تفضيل الوضع محفوظ، ويتبع النظام أول مرة */
     const THEME_KEY="jz_theme";
@@ -5211,7 +5809,8 @@ create policy "del"   on showroom_customers for delete using (true);`;
     }
 
     function App() {
-      const [tab,setTab]=useState("dashboard"); const [dark,setDark]=useState(initialDark);
+      const [tab,setTab]=useState("dashboard"); const [sub,setSub]=useState(null);
+      const [dark,setDark]=useState(initialDark);
       /* يُضبط أثناء العرض لا في تأثير جانبي، فتلتقط الرسوم البيانية اللون الصحيح من أول إطار */
       THEME = dark ? "dark" : "light";
       const [sideOpen,setSideOpen]=useState(false); const [notifOpen,setNotifOpen]=useState(false);
@@ -5293,7 +5892,14 @@ create policy "del"   on showroom_customers for delete using (true);`;
         const r=[]; (p.data||[]).forEach(x=>r.push({t:"دهان",n:x.name,go:"painters"})); (pr.data||[]).forEach(x=>r.push({t:"موقع",n:x.name,go:"projects"})); (c.data||[]).forEach(x=>r.push({t:"مطور عقاري",n:x.name,go:"contractors"})); setResults(r);
       },300); return ()=>clearTimeout(tm); },[gq]);
 
-      const go=(id,pre)=>{ setTab(id); setSideOpen(false); setNotifOpen(false); setGq(""); setResults([]); if(pre)setPrefill({tab:id,data:pre}); window.scrollTo(0,0); };
+      /* أي وجهة قديمة تُفكّ تلقائيًا إلى شاشتها وتبويبها الفرعي */
+      const go=(id,pre)=>{
+        const r=resolveRoute(id);
+        setTab(r.tab); setSub(r.sub);
+        setSideOpen(false); setNotifOpen(false); setGq(""); setResults([]);
+        if(pre) setPrefill({tab:id,data:pre});
+        window.scrollTo(0,0);
+      };
       const highCount=notifs.filter(n=>n.level==="high").length;
       const unseen=Math.max(0, highCount-ack);
       const prefillFor=t=> (prefill&&prefill.tab===t)?prefill.data:null;
@@ -5316,17 +5922,30 @@ create policy "del"   on showroom_customers for delete using (true);`;
             <SyncBar/>
             <main id="main" className="px-4 sm:px-6 lg:px-8 py-5 sm:py-7 w-full max-w-[1360px] mx-auto pb-28 lg:pb-12">
               <div key={"ver"+(sync.lastSync||"")} className="fade-in">
-              {tab==="dashboard"&&<Dashboard key="dash" onGo={go}/>}
+              {tab==="dashboard"&&<TodayPage key="today" onGo={go}/>}
               {tab==="tasks"&&<TasksToday key="tasks" onGo={go}/>}
               {tab==="showroom"&&<ShowroomPage key="sr" onGo={go}/>}
               {tab==="plan"&&<WeeklyPlanPage key="plan" onGo={go}/>}
-              {tab==="market"&&<MarketMonitorPage key="mon"/>}
-              {tab==="products"&&<ProductsPage key="prod"/>}
-              {tab==="marketshare"&&<MarketSharePage key="ms"/>}
-              {tab==="insights"&&<InsightsPage key="ins" onGo={go}/>}
-              {tab==="timeline"&&<Timeline key="tl"/>}
-              {tab==="reports"&&<ReportsPage key="rep" onGo={go}/>}
-              {CONFIG[tab]&&<Section key={tab} cfg={CONFIG[tab]} onGo={go} prefill={prefillFor(tab)} clearPrefill={()=>setPrefill(null)}/>}
+
+              {/* الشاشات المجمّعة: عنوان واحد وشريط تبويبات، والمحتوى كما هو دون أي حذف */}
+              {SCREENS[tab]&&(
+                <>
+                  <PageHeader title={SCREENS[tab].title}
+                    lede={tab==="market"?"حصّتك، ومن ينافسك، وبأي منتج."
+                        :tab==="analysis"?"ما تقوله بياناتك، وما يستحقّ تحرّكًا."
+                        :"زياراتك وتدريباتك الميدانية."}/>
+                  <SubTabs screen={tab} sub={sub} onSub={setSub}/>
+                  {sub==="market"&&<MarketMonitorPage key="mon"/>}
+                  {sub==="products"&&<ProductsPage key="prod"/>}
+                  {sub==="marketshare"&&<MarketSharePage key="ms"/>}
+                  {sub==="insights"&&<InsightsPage key="ins" onGo={go}/>}
+                  {sub==="timeline"&&<Timeline key="tl"/>}
+                  {sub==="reports"&&<ReportsPage key="rep" onGo={go}/>}
+                  {CONFIG[sub]&&<Section key={sub} cfg={CONFIG[sub]} onGo={go} prefill={prefillFor(sub)} clearPrefill={()=>setPrefill(null)}/>}
+                </>
+              )}
+
+              {!SCREENS[tab]&&CONFIG[tab]&&<Section key={tab} cfg={CONFIG[tab]} onGo={go} prefill={prefillFor(tab)} clearPrefill={()=>setPrefill(null)}/>}
               </div>
               <footer className="flex items-center justify-center gap-3 pt-10 pb-2 t-chip txt-dim">
                 <span className="logo-mark" style={{width:14,height:14,opacity:.55}}/>
